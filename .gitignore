@@ -1,0 +1,59 @@
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+
+# Cargo
+Cargo.lock
+
+# Bevy specific
+# Bevy creates these when running
+/assets_processed/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Debug
+*.dSYM/
+
+# Profiling
+perf.data
+perf.data.old
+flamegraph.svg
+
+# Environment
+.env
+.env.local
+
+# Logs
+*.log
+
+# Build artifacts
+/dist/
+/build/
+
+# Dependencies
+/node_modules/
+
+# Testing
+/coverage/
+*.lcov
+
+# Documentation build
+/docs/_build/
+/docs/_site/
+
+# Temporary files
+*.tmp
+*.temp
+/tmp/
+/temp/
