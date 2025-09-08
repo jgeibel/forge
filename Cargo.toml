@@ -1,0 +1,23 @@
+[package]
+name = "forge"
+version = "0.1.0"
+edition = "2021"
+authors = ["Your Name"]
+description = "A Minecraft-like MMO with planet-based realms"
+
+[dependencies]
+bevy = { version = "0.14", features = ["dynamic_linking"] }
+bevy_egui = "0.30"
+noise = "0.9"
+bytemuck = "1.16"
+image = "0.24"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+lto = true
+codegen-units = 1

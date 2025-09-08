@@ -57,3 +57,7 @@ flamegraph.svg
 *.temp
 /tmp/
 /temp/
+
+# Added by cargo
+
+/target
