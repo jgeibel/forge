@@ -11,6 +11,8 @@ mod planet;
 mod fog;
 mod ui;
 mod texture;
+mod world;
+mod loading;
 
 use camera::CameraPlugin;
 use block::BlockPlugin;
@@ -21,6 +23,8 @@ use planet::PlanetPlugin;
 use fog::FogPlugin;
 use ui::UIPlugin;
 use texture::TexturePlugin;
+use world::WorldPlugin;
+use loading::{LoadingPlugin, GameState};
 
 fn main() {
     App::new()
@@ -34,8 +38,10 @@ fn main() {
             ..default()
         }))
         .add_plugins((
+            LoadingPlugin,  // Add loading first to manage states
             CameraPlugin,
             BlockPlugin,
+            WorldPlugin,  // Add before ChunkPlugin since chunks depend on world gen
             ChunkPlugin,
             RenderPlugin,
             InputPlugin,
@@ -45,11 +51,11 @@ fn main() {
             TexturePlugin,
         ))
         .init_resource::<interaction::SelectedBlock>()
-        .add_systems(Startup, setup)
+        .add_systems(OnEnter(GameState::Playing), setup)
         .add_systems(Update, (
             interaction::block_interaction_system,
             interaction::draw_selection_box,
-        ))
+        ).run_if(in_state(GameState::Playing)))
         .run();
 }
 

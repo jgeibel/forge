@@ -2,8 +2,8 @@ use bevy::prelude::*;
 use crate::camera::PlayerCamera;
 
 // Simple render distance constants
-const RENDER_DISTANCE_GROUND: f32 = 16.0;  // 16 chunks at ground level
-const RENDER_DISTANCE_HIGH: f32 = 12.0;    // 12 chunks when high up
+const RENDER_DISTANCE_GROUND: f32 = 8.0;   // 8 chunks at ground level
+const RENDER_DISTANCE_HIGH: f32 = 8.0;     // 8 chunks when high up
 
 #[derive(Resource)]
 pub struct AltitudeRenderSystem {

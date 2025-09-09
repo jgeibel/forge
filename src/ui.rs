@@ -1,13 +1,19 @@
+pub mod loading_screen;
+
 use bevy::prelude::*;
 use crate::camera::PlayerCamera;
+use crate::loading::GameState;
+use crate::world::CurrentTemperature;
+use loading_screen::LoadingScreenPlugin;
 
 pub struct UIPlugin;
 
 impl Plugin for UIPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_systems(Startup, setup_ui)
-            .add_systems(Update, update_coordinates_display);
+            .add_plugins(LoadingScreenPlugin)
+            .add_systems(OnEnter(GameState::Playing), setup_ui)
+            .add_systems(Update, update_coordinates_display.run_if(in_state(GameState::Playing)));
     }
 }
 
@@ -92,6 +98,22 @@ fn setup_ui(mut commands: Commands) {
                 },
             ),
             TextSection::new(
+                "\nTemperature: ",
+                TextStyle {
+                    font_size: 20.0,
+                    color: Color::WHITE,
+                    ..default()
+                },
+            ),
+            TextSection::new(
+                "70°F (21°C)",
+                TextStyle {
+                    font_size: 20.0,
+                    color: Color::srgb(0.9, 0.9, 0.9),
+                    ..default()
+                },
+            ),
+            TextSection::new(
                 "\n[Origin at (0,0) marked with stone platform]",
                 TextStyle {
                     font_size: 16.0,
@@ -114,6 +136,7 @@ fn setup_ui(mut commands: Commands) {
 fn update_coordinates_display(
     camera_query: Query<&Transform, With<PlayerCamera>>,
     mut text_query: Query<&mut Text, With<CoordinatesText>>,
+    temperature: Res<CurrentTemperature>,
 ) {
     let Ok(camera_transform) = camera_query.get_single() else {
         return;
@@ -140,4 +163,38 @@ fn update_coordinates_display(
         "X: {:.0}, Z: {:.0}",
         wrapped_x, wrapped_z
     );
+    
+    // Update temperature with color coding
+    let temp_color = get_temperature_color(temperature.fahrenheit);
+    text.sections[5].value = format!(
+        "{:.0}°F ({:.0}°C)",
+        temperature.fahrenheit, temperature.celsius
+    );
+    text.sections[5].style.color = temp_color;
+}
+
+/// Get color for temperature display based on temperature range
+fn get_temperature_color(fahrenheit: f32) -> Color {
+    if fahrenheit < 0.0 {
+        // Freezing - light blue
+        Color::srgb(0.5, 0.8, 1.0)
+    } else if fahrenheit < 32.0 {
+        // Very cold - blue
+        Color::srgb(0.6, 0.9, 1.0)
+    } else if fahrenheit < 50.0 {
+        // Cold - light cyan
+        Color::srgb(0.7, 1.0, 1.0)
+    } else if fahrenheit < 70.0 {
+        // Cool - green
+        Color::srgb(0.6, 1.0, 0.6)
+    } else if fahrenheit < 85.0 {
+        // Warm - yellow
+        Color::srgb(1.0, 1.0, 0.6)
+    } else if fahrenheit < 100.0 {
+        // Hot - orange
+        Color::srgb(1.0, 0.7, 0.4)
+    } else {
+        // Very hot - red
+        Color::srgb(1.0, 0.4, 0.4)
+    }
 }

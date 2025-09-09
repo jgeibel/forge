@@ -1,6 +1,8 @@
 use bevy::prelude::*;
 use bevy::input::mouse::MouseMotion;
 use bevy::pbr::{FogSettings, FogFalloff};
+use bevy::render::camera::PerspectiveProjection;
+use crate::loading::GameState;
 
 #[derive(Component)]
 pub struct PlayerCamera;
@@ -29,11 +31,11 @@ pub struct CameraPlugin;
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_systems(Startup, setup_camera)
+            .add_systems(OnEnter(GameState::Playing), setup_camera)
             .add_systems(Update, (
                 camera_movement,
                 camera_look,
-            ));
+            ).run_if(in_state(GameState::Playing)));
     }
 }
 
@@ -42,6 +44,12 @@ fn setup_camera(mut commands: Commands) {
         Camera3dBundle {
             transform: Transform::from_xyz(16.0, 20.0, 16.0)
                 .looking_at(Vec3::new(16.0, 10.0, 0.0), Vec3::Y),
+            projection: PerspectiveProjection {
+                near: 0.1,  // Standard near plane
+                far: 400.0, // Reduced far plane for better precision
+                fov: 70.0_f32.to_radians(), // Minecraft uses 70 degrees FOV
+                ..default()
+            }.into(),
             ..default()
         },
         PlayerCamera,
@@ -49,8 +57,8 @@ fn setup_camera(mut commands: Commands) {
         FogSettings {
             color: Color::srgba(0.7, 0.8, 0.9, 1.0),
             falloff: FogFalloff::Linear {
-                start: 200.0,
-                end: 500.0,
+                start: 80.0,   // Start fog earlier (2.5 chunks)
+                end: 256.0,    // End at 8 chunks (8 * 32 = 256 blocks)
             },
             ..default()
         },

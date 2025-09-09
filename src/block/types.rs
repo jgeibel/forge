@@ -12,6 +12,9 @@ pub enum BlockType {
     Cobblestone = 8,
     Planks = 9,
     Bedrock = 10,  // Unbreakable planet core
+    Snow = 11,
+    Ice = 12,
+    PackedIce = 13,
 }
 
 impl BlockType {
@@ -24,11 +27,15 @@ impl BlockType {
     }
     
     pub fn is_transparent(&self) -> bool {
-        matches!(self, BlockType::Air | BlockType::Water | BlockType::Leaves)
+        matches!(self, BlockType::Air | BlockType::Water | BlockType::Leaves | BlockType::Ice)
     }
     
     pub fn is_visible(&self) -> bool {
         !matches!(self, BlockType::Air)
+    }
+    
+    pub fn is_liquid(&self) -> bool {
+        matches!(self, BlockType::Water)
     }
     
     pub fn get_texture_name(&self) -> &str {
@@ -44,6 +51,9 @@ impl BlockType {
             BlockType::Cobblestone => "cobblestone",
             BlockType::Planks => "planks",
             BlockType::Bedrock => "bedrock",
+            BlockType::Snow => "snow",
+            BlockType::Ice => "ice",
+            BlockType::PackedIce => "packed_ice",
         }
     }
     
@@ -60,6 +70,9 @@ impl BlockType {
             BlockType::Cobblestone => [9, 9, 9, 9, 9, 9],
             BlockType::Planks => [10, 10, 10, 10, 10, 10],
             BlockType::Bedrock => [11, 11, 11, 11, 11, 11],
+            BlockType::Snow => [12, 12, 12, 12, 12, 12],
+            BlockType::Ice => [13, 13, 13, 13, 13, 13],
+            BlockType::PackedIce => [14, 14, 14, 14, 14, 14],
         }
     }
     
@@ -75,6 +88,9 @@ impl BlockType {
             BlockType::Cobblestone => [0.4, 0.4, 0.4, 1.0],
             BlockType::Planks => [0.7, 0.5, 0.3, 1.0],
             BlockType::Bedrock => [0.1, 0.1, 0.1, 1.0],
+            BlockType::Snow => [0.95, 0.95, 1.0, 1.0],
+            BlockType::Ice => [0.7, 0.85, 1.0, 0.9],
+            BlockType::PackedIce => [0.6, 0.75, 0.95, 1.0],
             _ => [1.0, 1.0, 1.0, 1.0],
         }
     }

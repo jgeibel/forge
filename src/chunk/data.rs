@@ -58,6 +58,7 @@ impl Chunk {
     }
     
     pub fn generate_terrain(position: ChunkPos) -> Self {
+        // This is now a simple placeholder - actual generation will use WorldGenerator
         let mut chunk = Self::new(position);
         let world_offset = position.to_world_pos();
         
@@ -105,6 +106,25 @@ impl Chunk {
                     } else {
                         BlockType::Air
                     };
+                }
+            }
+        }
+        
+        chunk
+    }
+    
+    pub fn generate_with_world_gen(position: ChunkPos, world_gen: &crate::world::WorldGenerator) -> Self {
+        let mut chunk = Self::new(position);
+        let world_offset = position.to_world_pos();
+        
+        for x in 0..CHUNK_SIZE {
+            for z in 0..CHUNK_SIZE {
+                let world_x = world_offset.x + x as f32;
+                let world_z = world_offset.z + z as f32;
+                
+                for y in 0..CHUNK_SIZE {
+                    let world_y = world_offset.y + y as f32;
+                    chunk.blocks[x][y][z] = world_gen.get_block(world_x, world_y, world_z);
                 }
             }
         }
