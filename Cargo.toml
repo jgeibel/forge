@@ -6,7 +6,7 @@ authors = ["Your Name"]
 description = "A Minecraft-like MMO with planet-based realms"
 
 [dependencies]
-bevy = { version = "0.14", features = ["dynamic_linking"] }
+bevy = { version = "0.14", features = ["dynamic_linking", "file_watcher"] }
 bevy_egui = "0.30"
 noise = "0.9"
 bytemuck = "1.16"

@@ -7,6 +7,7 @@ use crate::camera::PlayerCamera;
 use crate::planet::altitude_system::{AltitudeRenderSystem, should_render_chunks};
 use crate::world::WorldGenerator;
 use crate::loading::{GameState, LoadingProgress, LoadingPhase};
+use crate::planet::config::PLANET_SIZE_BLOCKS;
 use std::sync::Arc;
 
 #[derive(Resource, Default)]
@@ -37,11 +38,19 @@ pub fn generate_initial_chunks(
         
         loading_progress.advance_phase(LoadingPhase::BuildingChunks, time.elapsed_seconds());
         
-        // Generate spawn area: 5x5 chunks horizontally, 3 chunks vertically
+        // Calculate spawn chunk position (middle of the planet)
+        let spawn_chunk_x = (PLANET_SIZE_BLOCKS / 2 / 32) as i32;  // 256 (middle chunk X)
+        let spawn_chunk_z = (PLANET_SIZE_BLOCKS / 2 / 32) as i32;  // 256 (middle chunk Z - equator)
+        
+        // Generate spawn area: 5x5 chunks horizontally, 3 chunks vertically around spawn point
         for x in -2..=2 {
             for y in -1..=1 {
                 for z in -2..=2 {
-                    chunk_queue.pending_chunks.push(ChunkPos::new(x, y, z));
+                    chunk_queue.pending_chunks.push(ChunkPos::new(
+                        spawn_chunk_x + x,
+                        2 + y,  // Start at chunk Y=2 (blocks 64-95)
+                        spawn_chunk_z + z
+                    ));
                 }
             }
         }

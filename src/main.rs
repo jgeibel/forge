@@ -13,6 +13,7 @@ mod ui;
 mod texture;
 mod world;
 mod loading;
+mod minimap;
 
 use camera::CameraPlugin;
 use block::BlockPlugin;
@@ -25,6 +26,7 @@ use ui::UIPlugin;
 use texture::TexturePlugin;
 use world::WorldPlugin;
 use loading::{LoadingPlugin, GameState};
+use minimap::MinimapPlugin;
 
 fn main() {
     App::new()
@@ -49,6 +51,7 @@ fn main() {
             FogPlugin,
             UIPlugin,
             TexturePlugin,
+            MinimapPlugin,
         ))
         .init_resource::<interaction::SelectedBlock>()
         .add_systems(OnEnter(GameState::Playing), setup)

@@ -3,6 +3,7 @@ use bevy::input::mouse::MouseMotion;
 use bevy::pbr::{FogSettings, FogFalloff};
 use bevy::render::camera::PerspectiveProjection;
 use crate::loading::GameState;
+use crate::planet::config::PLANET_SIZE_BLOCKS;
 
 #[derive(Component)]
 pub struct PlayerCamera;
@@ -40,10 +41,17 @@ impl Plugin for CameraPlugin {
 }
 
 fn setup_camera(mut commands: Commands) {
+    // Spawn near the equator (middle of the map)
+    // Planet is 16384x16384, so equator is at Z = 8192
+    // Let's start at a nice spot near the equator
+    let spawn_x = PLANET_SIZE_BLOCKS as f32 / 2.0;  // Center X (8192)
+    let spawn_z = PLANET_SIZE_BLOCKS as f32 / 2.0;  // Center Z (8192 - equator)
+    let spawn_y = 80.0;  // Spawn above ground level
+    
     commands.spawn((
         Camera3dBundle {
-            transform: Transform::from_xyz(16.0, 20.0, 16.0)
-                .looking_at(Vec3::new(16.0, 10.0, 0.0), Vec3::Y),
+            transform: Transform::from_xyz(spawn_x, spawn_y, spawn_z)
+                .looking_at(Vec3::new(spawn_x + 10.0, spawn_y - 5.0, spawn_z + 10.0), Vec3::Y),
             projection: PerspectiveProjection {
                 near: 0.1,  // Standard near plane
                 far: 400.0, // Reduced far plane for better precision
