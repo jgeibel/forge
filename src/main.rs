@@ -7,6 +7,7 @@ mod chunk;
 mod render;
 mod input;
 mod interaction;
+mod inventory;
 mod planet;
 mod fog;
 mod ui;
@@ -21,6 +22,7 @@ use block::BlockPlugin;
 use chunk::ChunkPlugin;
 use render::RenderPlugin;
 use input::InputPlugin;
+use inventory::InventoryPlugin;
 use planet::PlanetPlugin;
 use fog::FogPlugin;
 use ui::UIPlugin;
@@ -50,6 +52,7 @@ fn main() {
             ChunkPlugin,
             RenderPlugin,
             InputPlugin,
+            InventoryPlugin,  // Add inventory system
             PlanetPlugin,
             FogPlugin,
             UIPlugin,

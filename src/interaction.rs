@@ -2,6 +2,7 @@ use bevy::prelude::*;
 use crate::block::BlockType;
 use crate::chunk::{Chunk, ChunkPos, CHUNK_SIZE, CHUNK_SIZE_F32};
 use crate::camera::PlayerCamera;
+use crate::inventory::Hotbar;
 
 const REACH_DISTANCE: f32 = 8.0;
 
@@ -25,6 +26,7 @@ pub fn block_interaction_system(
     mouse_button: Res<ButtonInput<MouseButton>>,
     camera_query: Query<&Transform, With<PlayerCamera>>,
     mut chunk_query: Query<(&mut Chunk, &ChunkPos)>,
+    hotbar: Res<Hotbar>,
 ) {
     let Ok(camera_transform) = camera_query.get_single() else {
         return;
@@ -47,8 +49,13 @@ pub fn block_interaction_system(
         }
         
         if mouse_button.just_pressed(MouseButton::Right) {
-            let place_pos = hit_pos + hit_normal.as_ivec3();
-            place_block(place_pos, BlockType::Stone, &mut chunk_query);
+            if let Some(block_type) = hotbar.get_selected_block() {
+                // Don't place if it's Air (used for erasing)
+                if block_type != BlockType::Air {
+                    let place_pos = hit_pos + hit_normal.as_ivec3();
+                    place_block(place_pos, block_type, &mut chunk_query);
+                }
+            }
         }
     } else {
         selected_block.position = None;
@@ -59,11 +66,28 @@ pub fn block_interaction_system(
 pub fn draw_selection_box(
     mut gizmos: Gizmos,
     selected_block: Res<SelectedBlock>,
+    time: Res<Time>,
 ) {
     if let (Some(position), Some(normal)) = (selected_block.position, selected_block.normal) {
-        let block_center = position.as_vec3() + Vec3::splat(0.5);
+        let block_pos = position.as_vec3();
         
-        // Calculate face quad vertices based on normal
+        // Draw wireframe cube around selected block
+        let size = 1.002; // Slightly larger to avoid z-fighting
+        let half_size = size / 2.0;
+        let center = block_pos + Vec3::splat(0.5);
+        
+        // Pulsing effect for better visibility
+        let pulse = (time.elapsed_seconds() * 3.0).sin() * 0.1 + 0.9;
+        let color = Color::srgba(1.0, 1.0, 1.0, pulse);
+        
+        // Draw cube edges
+        gizmos.cuboid(
+            Transform::from_translation(center)
+                .with_scale(Vec3::splat(size)),
+            color,
+        );
+        
+        // Highlight the targeted face
         let (right, up) = if normal.abs().y > 0.5 {
             // Top or bottom face
             (Vec3::X, Vec3::Z)
@@ -75,45 +99,25 @@ pub fn draw_selection_box(
             (Vec3::X, Vec3::Y)
         };
         
-        // Offset the face slightly outside the block to avoid z-fighting
-        let face_center = block_center + normal * 0.502;
-        
-        // Draw the face as a filled rectangle
-        let half_size = 0.501;
+        // Draw highlighted face
+        let face_center = center + normal * (half_size + 0.001);
+        let face_size = 0.502;
         let corners = [
-            face_center - right * half_size - up * half_size,
-            face_center + right * half_size - up * half_size,
-            face_center + right * half_size + up * half_size,
-            face_center - right * half_size + up * half_size,
+            face_center - right * face_size - up * face_size,
+            face_center + right * face_size - up * face_size,
+            face_center + right * face_size + up * face_size,
+            face_center - right * face_size + up * face_size,
         ];
         
-        // Draw face outline
+        // Face outline with stronger color
         gizmos.linestrip(
             [corners[0], corners[1], corners[2], corners[3], corners[0]],
-            Color::srgba(1.0, 1.0, 1.0, 0.8),
+            Color::srgba(1.0, 1.0, 0.0, pulse), // Yellow highlight
         );
         
-        // Draw semi-transparent face fill using two triangles
-        let face_color = Color::srgba(1.0, 1.0, 1.0, 0.15);
-        
-        // Triangle 1
-        gizmos.line(corners[0], corners[2], face_color);
-        gizmos.line(corners[1], corners[3], face_color);
-        
-        // Add grid lines for better visibility
-        for i in 1..4 {
-            let t = i as f32 / 4.0;
-            gizmos.line(
-                corners[0].lerp(corners[1], t),
-                corners[3].lerp(corners[2], t),
-                Color::srgba(1.0, 1.0, 1.0, 0.1),
-            );
-            gizmos.line(
-                corners[0].lerp(corners[3], t),
-                corners[1].lerp(corners[2], t),
-                Color::srgba(1.0, 1.0, 1.0, 0.1),
-            );
-        }
+        // Cross pattern on face for better visibility
+        gizmos.line(corners[0], corners[2], Color::srgba(1.0, 1.0, 0.0, pulse * 0.5));
+        gizmos.line(corners[1], corners[3], Color::srgba(1.0, 1.0, 0.0, pulse * 0.5));
     }
 }
 
@@ -123,25 +127,120 @@ fn raycast_voxel(
     max_distance: f32,
     chunk_query: &Query<(&mut Chunk, &ChunkPos)>,
 ) -> Option<(IVec3, Vec3)> {
+    // Use DDA algorithm for efficient voxel traversal
     let direction = direction.normalize();
-    let mut current = origin;
-    let step = 0.01;
-    let mut previous_block_pos = world_to_block_pos(origin);
     
-    while current.distance(origin) < max_distance {
-        let block_pos = world_to_block_pos(current);
-        
-        if let Some(block) = get_block_at_world_pos(block_pos, chunk_query) {
+    // Starting voxel position
+    let mut current_voxel = world_to_block_pos(origin);
+    
+    // Calculate step direction for each axis
+    let step_x = if direction.x > 0.0 { 1 } else { -1 };
+    let step_y = if direction.y > 0.0 { 1 } else { -1 };
+    let step_z = if direction.z > 0.0 { 1 } else { -1 };
+    
+    // Calculate the distance to the next voxel boundary for each axis
+    let next_voxel_boundary_x = if direction.x > 0.0 {
+        (current_voxel.x + 1) as f32
+    } else {
+        current_voxel.x as f32
+    };
+    
+    let next_voxel_boundary_y = if direction.y > 0.0 {
+        (current_voxel.y + 1) as f32
+    } else {
+        current_voxel.y as f32
+    };
+    
+    let next_voxel_boundary_z = if direction.z > 0.0 {
+        (current_voxel.z + 1) as f32
+    } else {
+        current_voxel.z as f32
+    };
+    
+    // Calculate t values for each axis (distance along ray to reach next voxel boundary)
+    let mut t_max_x = if direction.x.abs() > 0.0001 {
+        (next_voxel_boundary_x - origin.x) / direction.x
+    } else {
+        f32::MAX
+    };
+    
+    let mut t_max_y = if direction.y.abs() > 0.0001 {
+        (next_voxel_boundary_y - origin.y) / direction.y
+    } else {
+        f32::MAX
+    };
+    
+    let mut t_max_z = if direction.z.abs() > 0.0001 {
+        (next_voxel_boundary_z - origin.z) / direction.z
+    } else {
+        f32::MAX
+    };
+    
+    // Calculate how much to increase t for each step in each direction
+    let t_delta_x = if direction.x.abs() > 0.0001 {
+        1.0 / direction.x.abs()
+    } else {
+        f32::MAX
+    };
+    
+    let t_delta_y = if direction.y.abs() > 0.0001 {
+        1.0 / direction.y.abs()
+    } else {
+        f32::MAX
+    };
+    
+    let t_delta_z = if direction.z.abs() > 0.0001 {
+        1.0 / direction.z.abs()
+    } else {
+        f32::MAX
+    };
+    
+    let mut distance_traveled = 0.0;
+    let mut previous_voxel = current_voxel;
+    
+    // Maximum iterations to prevent infinite loops
+    let max_steps = (max_distance * 3.0) as i32;
+    let mut steps = 0;
+    
+    while distance_traveled < max_distance && steps < max_steps {
+        // Check current voxel for solid block
+        if let Some(block) = get_block_at_world_pos(current_voxel, chunk_query) {
             if block.is_solid() {
-                let normal = calculate_hit_normal(previous_block_pos, block_pos);
-                return Some((block_pos, normal));
+                let normal = calculate_hit_normal(previous_voxel, current_voxel);
+                return Some((current_voxel, normal));
             }
         }
         
-        if block_pos != previous_block_pos {
-            previous_block_pos = block_pos;
+        previous_voxel = current_voxel;
+        
+        // Step to next voxel boundary
+        if t_max_x < t_max_y {
+            if t_max_x < t_max_z {
+                // Step in X direction
+                current_voxel.x += step_x;
+                distance_traveled = t_max_x;
+                t_max_x += t_delta_x;
+            } else {
+                // Step in Z direction
+                current_voxel.z += step_z;
+                distance_traveled = t_max_z;
+                t_max_z += t_delta_z;
+            }
+        } else {
+            if t_max_y < t_max_z {
+                // Step in Y direction
+                current_voxel.y += step_y;
+                distance_traveled = t_max_y;
+                t_max_y += t_delta_y;
+            } else {
+                // Step in Z direction
+                current_voxel.z += step_z;
+                distance_traveled = t_max_z;
+                t_max_z += t_delta_z;
+            }
         }
-        current += direction * step;
+        
+        steps += 1;
     }
     
     None
@@ -212,6 +311,7 @@ fn remove_block(
             let block = chunk.get_block(local_x, local_y, local_z);
             if block.is_breakable() {
                 chunk.set_block(local_x, local_y, local_z, BlockType::Air);
+                chunk.dirty = true; // Mark chunk for mesh regeneration
             }
             return;
         }
@@ -235,7 +335,11 @@ fn place_block(
             let local_y = world_pos.y.rem_euclid(CHUNK_SIZE as i32) as usize;
             let local_z = world_pos.z.rem_euclid(CHUNK_SIZE as i32) as usize;
             
-            chunk.set_block(local_x, local_y, local_z, block_type);
+            // Only place if current block is air
+            if chunk.get_block(local_x, local_y, local_z) == BlockType::Air {
+                chunk.set_block(local_x, local_y, local_z, block_type);
+                chunk.dirty = true; // Mark chunk for mesh regeneration
+            }
             return;
         }
     }
