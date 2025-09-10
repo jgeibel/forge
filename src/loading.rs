@@ -45,6 +45,7 @@ pub struct LoadingProgress {
     pub current_phase: LoadingPhase,
     pub phase_start_time: f32,
     pub total_start_time: f32,
+    pub spawn_position: Option<Vec3>,  // Determined spawn position
 }
 
 impl Default for LoadingProgress {
@@ -55,6 +56,7 @@ impl Default for LoadingProgress {
             current_phase: LoadingPhase::Initializing,
             phase_start_time: 0.0,
             total_start_time: 0.0,
+            spawn_position: None,
         }
     }
 }
@@ -157,11 +159,18 @@ fn cleanup_loading() {
 
 fn setup_world_generation(
     mut loading_progress: ResMut<LoadingProgress>,
+    world_gen: Res<crate::world::WorldGenerator>,
+    planet_config: Res<crate::planet::PlanetConfig>,
 ) {
     // Reset progress counter when entering world generation
     loading_progress.chunks_generated = 0;
-    // Don't set total_chunks here - it will be set by generate_initial_chunks
-    info!("Starting world generation");
+    
+    // Determine spawn position before generating chunks
+    let planet_size = planet_config.size_chunks as f32 * 32.0;
+    let spawn_pos = crate::camera::find_guaranteed_land_spawn(&world_gen, planet_size);
+    loading_progress.spawn_position = Some(spawn_pos);
+    
+    info!("Starting world generation at spawn position: {:?}", spawn_pos);
 }
 
 fn update_world_generation(

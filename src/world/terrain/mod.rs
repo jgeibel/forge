@@ -1,7 +1,6 @@
 pub mod continental;
 pub mod heightmap;
 
-use crate::world::noise_layers::{NoiseLayer, LayeredNoise};
 use crate::world::biomes::{Biome, ClimateMap};
 use crate::world::WorldGenConfig;
 

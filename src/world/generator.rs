@@ -1,8 +1,7 @@
 use bevy::prelude::*;
-use noise::{NoiseFn, Perlin, Seedable};
+use noise::Seedable;
 use crate::planet::config::PlanetConfig;
 use crate::block::BlockType;
-use super::noise_layers::NoiseLayer;
 use super::biomes::Biome;
 use super::terrain::TerrainGenerator;
 use super::features::FeatureGenerator;

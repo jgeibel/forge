@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use bevy::window::{WindowMode, PresentMode};
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::render::render_asset::RenderAssetUsages;
-use bevy::sprite::{ColorMaterial, ColorMesh2dBundle, Mesh2dHandle};
+use bevy::sprite::{ColorMaterial, ColorMesh2dBundle};
 use crate::world::{WorldGenerator, Biome};
 use crate::camera::PlayerCamera;
 use crate::loading::GameState;

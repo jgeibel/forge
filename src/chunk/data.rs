@@ -79,7 +79,7 @@ impl Chunk {
                 
                 // Create landmarks at specific positions
                 let is_origin = wrapped_x < 32.0 && wrapped_z < 32.0;
-                let is_pillar = (wrapped_x as i32 % 256 == 0 && wrapped_z as i32 % 256 == 0);
+                let is_pillar = wrapped_x as i32 % 256 == 0 && wrapped_z as i32 % 256 == 0;
                 
                 for y in 0..CHUNK_SIZE {
                     let world_y = world_offset.y + y as f32;

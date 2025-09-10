@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use crate::loading::{GameState, LoadingProgress, LoadingPhase};
+use crate::loading::{GameState, LoadingProgress};
 use crate::planet::PlanetConfig;
 
 /// Marker component for the loading screen root

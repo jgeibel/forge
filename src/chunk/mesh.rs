@@ -304,7 +304,7 @@ fn add_face(
     block: crate::block::BlockType,
     texture_atlas: Option<&BlockTextureAtlas>,
 ) {
-    use crate::block::BlockType;
+    
     let start_index = vertices.len() as u32;
     
     let (positions, normal) = match face {

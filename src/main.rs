@@ -14,6 +14,7 @@ mod texture;
 mod world;
 mod loading;
 mod minimap;
+mod physics;
 
 use camera::CameraPlugin;
 use block::BlockPlugin;
@@ -27,6 +28,7 @@ use texture::TexturePlugin;
 use world::WorldPlugin;
 use loading::{LoadingPlugin, GameState};
 use minimap::MinimapPlugin;
+use physics::PhysicsPlugin;
 
 fn main() {
     App::new()
@@ -42,6 +44,7 @@ fn main() {
         .add_plugins((
             LoadingPlugin,  // Add loading first to manage states
             CameraPlugin,
+            PhysicsPlugin,  // Add physics after camera
             BlockPlugin,
             WorldPlugin,  // Add before ChunkPlugin since chunks depend on world gen
             ChunkPlugin,

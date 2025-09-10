@@ -38,9 +38,18 @@ pub fn generate_initial_chunks(
         
         loading_progress.advance_phase(LoadingPhase::BuildingChunks, time.elapsed_seconds());
         
-        // Calculate spawn chunk position (middle of the planet)
-        let spawn_chunk_x = (PLANET_SIZE_BLOCKS / 2 / 32) as i32;  // 256 (middle chunk X)
-        let spawn_chunk_z = (PLANET_SIZE_BLOCKS / 2 / 32) as i32;  // 256 (middle chunk Z - equator)
+        // Use spawn position from loading progress, or fall back to center
+        let (spawn_chunk_x, spawn_chunk_z) = if let Some(spawn_pos) = loading_progress.spawn_position {
+            let chunk_x = (spawn_pos.x / 32.0).floor() as i32;
+            let chunk_z = (spawn_pos.z / 32.0).floor() as i32;
+            info!("Generating chunks around spawn position: ({}, {})", chunk_x, chunk_z);
+            (chunk_x, chunk_z)
+        } else {
+            warn!("No spawn position available, using planet center");
+            let spawn_chunk_x = (PLANET_SIZE_BLOCKS / 2 / 32) as i32;
+            let spawn_chunk_z = (PLANET_SIZE_BLOCKS / 2 / 32) as i32;
+            (spawn_chunk_x, spawn_chunk_z)
+        };
         
         // Generate spawn area: 5x5 chunks horizontally, 3 chunks vertically around spawn point
         for x in -2..=2 {

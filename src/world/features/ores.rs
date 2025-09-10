@@ -1,4 +1,4 @@
-use noise::{NoiseFn, Perlin, Seedable};
+use noise::{NoiseFn, Perlin};
 use crate::block::BlockType;
 use crate::world::WorldGenConfig;
 
