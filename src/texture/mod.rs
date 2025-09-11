@@ -86,6 +86,35 @@ impl BlockTextureAtlas {
         // Return missing texture UV (purple)
         (Vec2::ZERO, Vec2::new(32.0 / self.atlas_size.x, 32.0 / self.atlas_size.y))
     }
+    
+    /// Get a representative texture path for UI display purposes
+    /// Returns the most representative texture for a block type
+    pub fn get_display_texture_path(block_type: &str) -> String {
+        let base_path = format!("assets/textures/blocks/{}", block_type);
+        
+        // Check actual file existence
+        use std::path::Path;
+        
+        // Try faces in order of preference for UI display
+        let face_options = vec![
+            "side",   // Side view is often most recognizable
+            "all",    // Universal texture
+            "top",    // Top view as fallback
+            "front",  // Front face if available
+            "bottom", // Last resort
+        ];
+        
+        for face_name in face_options {
+            let file_path = format!("{}/{}.png", base_path, face_name);
+            if Path::new(&file_path).exists() {
+                // Return without "assets/" prefix for asset_server.load()
+                return format!("textures/blocks/{}/{}.png", block_type, face_name);
+            }
+        }
+        
+        // Default fallback (assume all.png exists)
+        format!("textures/blocks/{}/all.png", block_type)
+    }
 }
 
 pub struct TexturePlugin;

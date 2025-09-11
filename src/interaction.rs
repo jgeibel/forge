@@ -3,6 +3,8 @@ use crate::block::BlockType;
 use crate::chunk::{Chunk, ChunkPos, CHUNK_SIZE, CHUNK_SIZE_F32};
 use crate::camera::PlayerCamera;
 use crate::inventory::Hotbar;
+use crate::tools::Tool;
+use crate::items;
 
 const REACH_DISTANCE: f32 = 8.0;
 
@@ -21,12 +23,34 @@ impl Default for SelectedBlock {
     }
 }
 
+#[derive(Resource, Default)]
+pub struct BlockExtractionState {
+    pub extracting_pos: Option<IVec3>,
+    pub progress: f32,
+    pub total_time: f32,
+    pub current_tool: Tool,
+    pub last_particle_spawn: f32,
+    pub extracting_block_type: Option<BlockType>,
+}
+
+#[derive(Component)]
+pub struct ExtractingBlock {
+    pub original_transform: Transform,
+    pub wobble_seed: f32,
+}
+
 pub fn block_interaction_system(
     mut selected_block: ResMut<SelectedBlock>,
+    mut extraction_state: ResMut<BlockExtractionState>,
     mouse_button: Res<ButtonInput<MouseButton>>,
     camera_query: Query<&Transform, With<PlayerCamera>>,
     mut chunk_query: Query<(&mut Chunk, &ChunkPos)>,
-    hotbar: Res<Hotbar>,
+    mut hotbar: ResMut<Hotbar>,
+    time: Res<Time>,
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    texture_atlas: Option<Res<crate::texture::BlockTextureAtlas>>,
 ) {
     let Ok(camera_transform) = camera_query.get_single() else {
         return;
@@ -44,8 +68,59 @@ pub fn block_interaction_system(
         selected_block.position = Some(hit_pos);
         selected_block.normal = Some(hit_normal);
         
-        if mouse_button.just_pressed(MouseButton::Left) {
-            remove_block(hit_pos, &mut chunk_query);
+        // Handle extraction (hold left mouse)
+        if mouse_button.pressed(MouseButton::Left) {
+            // Get the block type
+            if let Some(block_type) = get_block_at_world_pos(hit_pos, &chunk_query) {
+                if block_type.is_breakable() && block_type != BlockType::Air {
+                    // Start or continue extraction
+                    if extraction_state.extracting_pos != Some(hit_pos) {
+                        // Start new extraction
+                        extraction_state.extracting_pos = Some(hit_pos);
+                        extraction_state.progress = 0.0;
+                        extraction_state.current_tool = Tool::Hand; // TODO: Get actual tool
+                        extraction_state.extracting_block_type = Some(block_type);
+                        extraction_state.last_particle_spawn = 0.0;
+                        
+                        let base_time = block_type.extraction_time();
+                        let efficiency = extraction_state.current_tool.efficiency_for(block_type);
+                        extraction_state.total_time = base_time / efficiency;
+                    }
+                    
+                    // Update progress
+                    extraction_state.progress += time.delta_seconds();
+                    
+                    // Check if extraction complete
+                    if extraction_state.progress >= extraction_state.total_time {
+                        // Spawn dropped item
+                        let world_pos = hit_pos.as_vec3() + Vec3::splat(0.5);
+                        items::spawn_dropped_item(
+                            &mut commands,
+                            block_type,
+                            world_pos,
+                            &mut meshes,
+                            &mut materials,
+                            texture_atlas.as_deref(),
+                            &time,
+                        );
+                        
+                        // Remove the block
+                        remove_block(hit_pos, &mut chunk_query);
+                        
+                        // Reset extraction state
+                        extraction_state.extracting_pos = None;
+                        extraction_state.progress = 0.0;
+                        extraction_state.extracting_block_type = None;
+                        extraction_state.last_particle_spawn = 0.0;
+                    }
+                }
+            }
+        } else {
+            // Reset extraction if button released
+            extraction_state.extracting_pos = None;
+            extraction_state.progress = 0.0;
+            extraction_state.extracting_block_type = None;
+            extraction_state.last_particle_spawn = 0.0;
         }
         
         if mouse_button.just_pressed(MouseButton::Right) {
@@ -53,7 +128,10 @@ pub fn block_interaction_system(
                 // Don't place if it's Air (used for erasing)
                 if block_type != BlockType::Air {
                     let place_pos = hit_pos + hit_normal.as_ivec3();
-                    place_block(place_pos, block_type, &mut chunk_query);
+                    // Try to place block and use item from inventory
+                    if place_block(place_pos, block_type, &mut chunk_query) {
+                        hotbar.use_selected_item();
+                    }
                 }
             }
         }
@@ -66,8 +144,15 @@ pub fn block_interaction_system(
 pub fn draw_selection_box(
     mut gizmos: Gizmos,
     selected_block: Res<SelectedBlock>,
+    extraction_state: Res<BlockExtractionState>,
     time: Res<Time>,
 ) {
+    // Don't draw selection box if we're currently extracting a block
+    // This makes the extraction animation more visible
+    if extraction_state.extracting_pos.is_some() && extraction_state.progress > 0.0 {
+        return;
+    }
+    
     if let (Some(position), Some(normal)) = (selected_block.position, selected_block.normal) {
         let block_pos = position.as_vec3();
         
@@ -119,6 +204,235 @@ pub fn draw_selection_box(
         gizmos.line(corners[0], corners[2], Color::srgba(1.0, 1.0, 0.0, pulse * 0.5));
         gizmos.line(corners[1], corners[3], Color::srgba(1.0, 1.0, 0.0, pulse * 0.5));
     }
+}
+
+/// Visual feedback system for block extraction - shows edge separation lines and wobble
+pub fn update_extraction_visual(
+    mut commands: Commands,
+    mut gizmos: Gizmos,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut extraction_state: ResMut<BlockExtractionState>,
+    chunk_query: Query<(&Chunk, &ChunkPos)>,
+    time: Res<Time>,
+) {
+    if let Some(pos) = extraction_state.extracting_pos {
+        if extraction_state.progress > 0.0 {
+            let progress = (extraction_state.progress / extraction_state.total_time).min(1.0);
+            let block_center = pos.as_vec3() + Vec3::splat(0.5);
+            
+            // Check which faces have neighboring blocks
+            let has_neighbor = [
+                get_block_at_world_pos_readonly(pos + IVec3::X, &chunk_query).map_or(false, |b| b.is_solid()),      // +X
+                get_block_at_world_pos_readonly(pos - IVec3::X, &chunk_query).map_or(false, |b| b.is_solid()),      // -X
+                get_block_at_world_pos_readonly(pos + IVec3::Y, &chunk_query).map_or(false, |b| b.is_solid()),      // +Y
+                get_block_at_world_pos_readonly(pos - IVec3::Y, &chunk_query).map_or(false, |b| b.is_solid()),      // -Y
+                get_block_at_world_pos_readonly(pos + IVec3::Z, &chunk_query).map_or(false, |b| b.is_solid()),      // +Z
+                get_block_at_world_pos_readonly(pos - IVec3::Z, &chunk_query).map_or(false, |b| b.is_solid()),      // -Z
+            ];
+            
+            // Enhanced color progression with pulsing effect
+            let pulse = (time.elapsed_seconds() * 8.0).sin() * 0.5 + 0.5;
+            let base_color = if progress < 0.33 {
+                // White -> Yellow
+                Color::srgba(1.0, 1.0, 1.0 - progress * 3.0, 1.0)
+            } else if progress < 0.66 {
+                // Yellow -> Orange
+                Color::srgba(1.0, 1.0 - (progress - 0.33) * 1.5, 0.0, 1.0)
+            } else {
+                // Orange -> Green (almost complete)
+                Color::srgba(1.0 - (progress - 0.66) * 3.0, 1.0, (progress - 0.66) * 3.0, 1.0)
+            };
+            
+            // Make the cracks much more visible
+            let crack_thickness = 0.52 + progress * 0.03; // Thicker base and more growth
+            let crack_length = progress; // Cracks grow along edges
+            
+            // Draw progressive cracks on each connected face
+            // X faces
+            if has_neighbor[0] { // +X face
+                let face_center = block_center + Vec3::X * 0.5;
+                draw_progressive_cracks(&mut gizmos, face_center, Vec3::Y, Vec3::Z, crack_thickness, crack_length, base_color, pulse);
+            }
+            if has_neighbor[1] { // -X face
+                let face_center = block_center - Vec3::X * 0.5;
+                draw_progressive_cracks(&mut gizmos, face_center, Vec3::Y, Vec3::Z, crack_thickness, crack_length, base_color, pulse);
+            }
+            
+            // Y faces
+            if has_neighbor[2] { // +Y face
+                let face_center = block_center + Vec3::Y * 0.5;
+                draw_progressive_cracks(&mut gizmos, face_center, Vec3::X, Vec3::Z, crack_thickness, crack_length, base_color, pulse);
+            }
+            if has_neighbor[3] { // -Y face
+                let face_center = block_center - Vec3::Y * 0.5;
+                draw_progressive_cracks(&mut gizmos, face_center, Vec3::X, Vec3::Z, crack_thickness, crack_length, base_color, pulse);
+            }
+            
+            // Z faces
+            if has_neighbor[4] { // +Z face
+                let face_center = block_center + Vec3::Z * 0.5;
+                draw_progressive_cracks(&mut gizmos, face_center, Vec3::X, Vec3::Y, crack_thickness, crack_length, base_color, pulse);
+            }
+            if has_neighbor[5] { // -Z face
+                let face_center = block_center - Vec3::Z * 0.5;
+                draw_progressive_cracks(&mut gizmos, face_center, Vec3::X, Vec3::Y, crack_thickness, crack_length, base_color, pulse);
+            }
+            
+            // Spawn particles periodically during extraction
+            let particle_interval = 0.1; // Spawn particles every 0.1 seconds
+            if extraction_state.progress - extraction_state.last_particle_spawn > particle_interval {
+                if let Some(block_type) = extraction_state.extracting_block_type {
+                    crate::particles::spawn_extraction_particles(
+                        &mut commands,
+                        &mut meshes,
+                        &mut materials,
+                        block_center,
+                        block_type,
+                        progress,
+                    );
+                    extraction_state.last_particle_spawn = extraction_state.progress;
+                }
+            }
+            
+            // Add subtle extraction completion flash only
+            if progress > 0.95 {
+                let flash_intensity = (progress - 0.95) * 20.0;
+                // Draw a subtle expanding cube to indicate completion
+                gizmos.cuboid(
+                    Transform::from_translation(block_center)
+                        .with_scale(Vec3::splat(1.0 + flash_intensity * 0.05)),
+                    Color::srgba(1.0, 1.0, 1.0, flash_intensity * 0.2),
+                );
+            }
+        }
+    }
+}
+
+fn draw_progressive_cracks(
+    gizmos: &mut Gizmos,
+    center: Vec3,
+    right: Vec3,
+    up: Vec3,
+    size: f32,
+    progress: f32,
+    color: Color,
+    pulse: f32,
+) {
+    let corners = [
+        center - right * 0.5 - up * 0.5,  // Bottom-left
+        center + right * 0.5 - up * 0.5,  // Bottom-right
+        center + right * 0.5 + up * 0.5,  // Top-right
+        center - right * 0.5 + up * 0.5,  // Top-left
+    ];
+    
+    // Draw cracks that grow along each edge based on progress
+    let crack_segments = 8; // Number of segments per edge for jagged effect
+    
+    // Bottom edge (0 -> 1)
+    draw_crack_segment(gizmos, corners[0], corners[1], progress, crack_segments, color, pulse, size);
+    
+    // Right edge (1 -> 2)
+    draw_crack_segment(gizmos, corners[1], corners[2], progress, crack_segments, color, pulse, size);
+    
+    // Top edge (2 -> 3)
+    draw_crack_segment(gizmos, corners[2], corners[3], progress, crack_segments, color, pulse, size);
+    
+    // Left edge (3 -> 0)
+    draw_crack_segment(gizmos, corners[3], corners[0], progress, crack_segments, color, pulse, size);
+    
+    // Draw subtle diagonal cracks from corners when progress > 0.7
+    if progress > 0.7 {
+        let diagonal_progress = (progress - 0.7) * 3.33; // Scale to 0-1 range
+        let diagonal_color = color.with_alpha(0.5 * diagonal_progress);
+        
+        // Draw simple diagonal lines from corners, not jagged
+        for corner in &corners {
+            let dir_to_center = (center - *corner).normalize();
+            let crack_end = *corner + dir_to_center * diagonal_progress * 0.2;
+            gizmos.line(*corner, crack_end, diagonal_color);
+        }
+    }
+}
+
+fn draw_crack_segment(
+    gizmos: &mut Gizmos,
+    start: Vec3,
+    end: Vec3,
+    progress: f32,
+    segments: usize,
+    color: Color,
+    pulse: f32,
+    thickness: f32,
+) {
+    let actual_end = start + (end - start) * progress.min(1.0);
+    draw_jagged_line(gizmos, start, actual_end, segments, color, pulse, thickness);
+}
+
+fn draw_jagged_line(
+    gizmos: &mut Gizmos,
+    start: Vec3,
+    end: Vec3,
+    segments: usize,
+    color: Color,
+    pulse: f32,
+    thickness: f32,
+) {
+    let mut points = Vec::new();
+    points.push(start);
+    
+    let segment_vec = (end - start) / segments as f32;
+    let perpendicular = segment_vec.cross(Vec3::Y).normalize();
+    
+    for i in 1..segments {
+        let t = i as f32 / segments as f32;
+        let base_point = start + segment_vec * i as f32;
+        
+        // Add some random-looking offset for jagged appearance
+        let offset = (i as f32 * 7.13 + start.x * 3.7 + start.z * 5.3).sin() * 0.02;
+        let jitter = perpendicular * offset * (1.0 + pulse * 0.5);
+        
+        points.push(base_point + jitter);
+    }
+    
+    points.push(end);
+    
+    // Draw the jagged line with varying thickness
+    for i in 0..points.len() - 1 {
+        let segment_pulse = ((i as f32 * 0.5 + pulse * 3.0).sin() + 1.0) * 0.5;
+        let segment_color = color.with_alpha(0.7 + segment_pulse * 0.3);
+        
+        // Draw multiple lines for thickness effect
+        for offset in [0.0, 0.005, -0.005] {
+            let offset_vec = perpendicular * offset;
+            gizmos.line(
+                points[i] + offset_vec,
+                points[i + 1] + offset_vec,
+                segment_color,
+            );
+        }
+    }
+}
+
+fn draw_face_edges(
+    gizmos: &mut Gizmos,
+    center: Vec3,
+    right: Vec3,
+    up: Vec3,
+    size: f32,
+    color: Color,
+) {
+    let corners = [
+        center - right * size - up * size,
+        center + right * size - up * size,
+        center + right * size + up * size,
+        center - right * size + up * size,
+    ];
+    
+    gizmos.linestrip(
+        [corners[0], corners[1], corners[2], corners[3], corners[0]],
+        color,
+    );
 }
 
 fn raycast_voxel(
@@ -291,6 +605,29 @@ fn get_block_at_world_pos(
     None
 }
 
+fn get_block_at_world_pos_readonly(
+    world_pos: IVec3,
+    chunk_query: &Query<(&Chunk, &ChunkPos)>,
+) -> Option<BlockType> {
+    let chunk_pos = ChunkPos::new(
+        (world_pos.x as f32 / CHUNK_SIZE_F32).floor() as i32,
+        (world_pos.y as f32 / CHUNK_SIZE_F32).floor() as i32,
+        (world_pos.z as f32 / CHUNK_SIZE_F32).floor() as i32,
+    );
+    
+    for (chunk, pos) in chunk_query.iter() {
+        if *pos == chunk_pos {
+            let local_x = world_pos.x.rem_euclid(CHUNK_SIZE as i32) as usize;
+            let local_y = world_pos.y.rem_euclid(CHUNK_SIZE as i32) as usize;
+            let local_z = world_pos.z.rem_euclid(CHUNK_SIZE as i32) as usize;
+            
+            return Some(chunk.get_block(local_x, local_y, local_z));
+        }
+    }
+    
+    None
+}
+
 fn remove_block(
     world_pos: IVec3,
     chunk_query: &mut Query<(&mut Chunk, &ChunkPos)>,
@@ -322,7 +659,7 @@ fn place_block(
     world_pos: IVec3,
     block_type: BlockType,
     chunk_query: &mut Query<(&mut Chunk, &ChunkPos)>,
-) {
+) -> bool {
     let chunk_pos = ChunkPos::new(
         (world_pos.x as f32 / CHUNK_SIZE_F32).floor() as i32,
         (world_pos.y as f32 / CHUNK_SIZE_F32).floor() as i32,
@@ -339,8 +676,10 @@ fn place_block(
             if chunk.get_block(local_x, local_y, local_z) == BlockType::Air {
                 chunk.set_block(local_x, local_y, local_z, block_type);
                 chunk.dirty = true; // Mark chunk for mesh regeneration
+                return true;
             }
-            return;
+            return false;
         }
     }
+    false
 }

@@ -12,6 +12,7 @@ noise = "0.9"
 bytemuck = "1.16"
 image = "0.24"
 futures-lite = "2.0"
+rand = "0.8"
 
 [profile.dev]
 opt-level = 1

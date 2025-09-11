@@ -4,6 +4,7 @@ use crate::physics::PlayerPhysics;
 use crate::chunk::{Chunk, ChunkPos, CHUNK_SIZE, CHUNK_SIZE_F32};
 use crate::loading::GameState;
 use crate::world::CurrentTemperature;
+use crate::celestial::time::GameTime;
 
 #[derive(Resource)]
 pub struct DebugOverlayState {
@@ -83,6 +84,7 @@ fn update_debug_text(
     temperature: Res<CurrentTemperature>,
     chunk_query: Query<(&Chunk, &ChunkPos)>,
     debug_state: Res<DebugOverlayState>,
+    game_time: Res<GameTime>,
 ) {
     let Ok((transform, physics, controller)) = player_query.get_single() else {
         return;
@@ -165,15 +167,24 @@ fn update_debug_text(
         // Normal mode - show simple position and temperature
         text.sections[0].value = "".to_string();  // No title in normal mode
         
-        // Simple display with position and temperature  
+        // Calculate time display
+        let hour = game_time.current_hour as u32;
+        let minute = ((game_time.current_hour - hour as f32) * 60.0) as u32;
+        let day = game_time.current_day;
+        
+        // Simple display with position, temperature, and time  
         text.sections[1].value = format!(
             "Position: X={:.0}, Y={:.0}, Z={:.0}\n\
              Temperature: {:.1}°C\n\
+             Time: Day {} {:02}:{:02}\n\
              {}",
             transform.translation.x,
             transform.translation.y,
             transform.translation.z,
             temperature.celsius,
+            day,
+            hour,
+            minute,
             if controller.fly_mode { "🚁 Fly Mode" } else { "" }
         );
     }

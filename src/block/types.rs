@@ -30,6 +30,21 @@ impl BlockType {
         matches!(self, BlockType::Air | BlockType::Water | BlockType::Leaves | BlockType::Ice)
     }
     
+    /// Base time in seconds to extract this block with bare hands
+    pub fn extraction_time(&self) -> f32 {
+        match self {
+            BlockType::Air => 0.0,
+            BlockType::Bedrock => f32::INFINITY, // Cannot be extracted
+            BlockType::Dirt | BlockType::Sand | BlockType::Snow => 0.5,
+            BlockType::Grass => 0.6,
+            BlockType::Wood | BlockType::Planks => 2.0,
+            BlockType::Leaves => 0.2,
+            BlockType::Stone | BlockType::Cobblestone => 3.0,
+            BlockType::Ice | BlockType::PackedIce => 1.5,
+            BlockType::Water => 0.0, // Cannot be extracted as a block
+        }
+    }
+    
     pub fn is_visible(&self) -> bool {
         !matches!(self, BlockType::Air)
     }

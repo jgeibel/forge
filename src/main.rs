@@ -8,6 +8,9 @@ mod render;
 mod input;
 mod interaction;
 mod inventory;
+mod items;
+mod tools;
+mod particles;
 mod planet;
 mod fog;
 mod ui;
@@ -16,6 +19,7 @@ mod world;
 mod loading;
 mod minimap;
 mod physics;
+mod celestial;
 
 use camera::CameraPlugin;
 use block::BlockPlugin;
@@ -31,6 +35,7 @@ use world::WorldPlugin;
 use loading::{LoadingPlugin, GameState};
 use minimap::MinimapPlugin;
 use physics::PhysicsPlugin;
+use celestial::CelestialPlugin;
 
 fn main() {
     App::new()
@@ -54,34 +59,28 @@ fn main() {
             InputPlugin,
             InventoryPlugin,  // Add inventory system
             PlanetPlugin,
+            CelestialPlugin,  // Add celestial system for day/night cycle
             FogPlugin,
             UIPlugin,
             TexturePlugin,
             MinimapPlugin,
         ))
         .init_resource::<interaction::SelectedBlock>()
+        .init_resource::<interaction::BlockExtractionState>()
         .add_systems(OnEnter(GameState::Playing), setup)
         .add_systems(Update, (
             interaction::block_interaction_system,
+            interaction::update_extraction_visual,
             interaction::draw_selection_box,
+            items::update_dropped_items,
+            items::apply_item_collisions,  // Add collision system after physics update
+            items::collect_items,
+            particles::update_particles,
         ).run_if(in_state(GameState::Playing)))
         .run();
 }
 
-fn setup(
-    mut commands: Commands,
-    mut ambient_light: ResMut<AmbientLight>,
-) {
-    ambient_light.brightness = 150.0;
-    
-    commands.spawn(DirectionalLightBundle {
-        directional_light: DirectionalLight {
-            illuminance: 10000.0,
-            shadows_enabled: false,
-            ..default()
-        },
-        transform: Transform::from_xyz(4.0, 8.0, 4.0)
-            .looking_at(Vec3::ZERO, Vec3::Y),
-        ..default()
-    });
+fn setup() {
+    // Lighting is now handled by the CelestialPlugin
+    // The sun and ambient light are dynamically updated based on time of day
 }

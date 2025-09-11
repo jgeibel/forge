@@ -58,6 +58,7 @@ impl WorldGenConfig {
         let planet_size = config.size_chunks as u32 * 32;
         
         // Scale frequencies based on planet size
+        // Use full linear scaling for frequencies (not sqrt) to maintain continent sizes
         let size_scale = planet_size as f64 / 16384.0;
         
         Self {
@@ -66,7 +67,8 @@ impl WorldGenConfig {
             sea_level: config.sea_level,
             
             // Scale continental frequency with planet size
-            continental_frequency: 0.0003 / size_scale.sqrt(),
+            // Frequency needs to scale linearly with size to maintain feature proportions
+            continental_frequency: 0.0003 / size_scale,
             continental_octaves: match planet_size {
                 0..=4096 => 3,
                 4097..=16384 => 4,
@@ -74,7 +76,7 @@ impl WorldGenConfig {
                 _ => 6,
             },
             
-            mountain_frequency: 0.002 / size_scale.sqrt(),
+            mountain_frequency: 0.002 / size_scale,
             mountain_scale: 48.0 * (size_scale as f32).min(2.0),
             
             cave_density: 0.5,

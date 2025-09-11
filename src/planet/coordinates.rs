@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use crate::planet::config::*;
+use std::f32::consts::PI;
 
 /// Wrapping coordinates for a spherical planet
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -7,6 +8,13 @@ pub struct PlanetPos {
     pub x: i32,
     pub y: i32,  // Height doesn't wrap
     pub z: i32,
+}
+
+/// Geographic coordinates on the planet
+#[derive(Debug, Clone, Copy)]
+pub struct GeographicCoords {
+    pub latitude: f32,   // -90 to 90 degrees (south to north)
+    pub longitude: f32,  // -180 to 180 degrees (west to east)
 }
 
 impl PlanetPos {
@@ -44,6 +52,72 @@ impl PlanetPos {
             self.y >> 5,
             self.z >> 5,
         )
+    }
+    
+    /// Convert to geographic coordinates (latitude/longitude)
+    pub fn to_geographic(&self) -> GeographicCoords {
+        // Map X coordinate to longitude (-180 to 180 degrees)
+        let longitude = (self.x as f32 / PLANET_SIZE_BLOCKS as f32) * 360.0 - 180.0;
+        
+        // Map Z coordinate to latitude (-90 to 90 degrees)
+        // Z=0 is south pole, Z=PLANET_SIZE is north pole
+        let latitude = (self.z as f32 / PLANET_SIZE_BLOCKS as f32) * 180.0 - 90.0;
+        
+        GeographicCoords { latitude, longitude }
+    }
+    
+    /// Create from geographic coordinates
+    pub fn from_geographic(coords: &GeographicCoords) -> Self {
+        // Convert longitude to X coordinate
+        let x = ((coords.longitude + 180.0) / 360.0 * PLANET_SIZE_BLOCKS as f32) as i32;
+        
+        // Convert latitude to Z coordinate
+        let z = ((coords.latitude + 90.0) / 180.0 * PLANET_SIZE_BLOCKS as f32) as i32;
+        
+        Self::new(x, 0, z)
+    }
+}
+
+impl GeographicCoords {
+    pub fn new(latitude: f32, longitude: f32) -> Self {
+        Self {
+            latitude: latitude.clamp(-90.0, 90.0),
+            longitude: ((longitude + 180.0) % 360.0) - 180.0,  // Wrap to -180 to 180
+        }
+    }
+    
+    /// Convert to radians for calculations
+    pub fn to_radians(&self) -> (f32, f32) {
+        (
+            self.latitude * PI / 180.0,
+            self.longitude * PI / 180.0,
+        )
+    }
+    
+    /// Calculate day length at this latitude for a given day of year
+    pub fn day_length_hours(&self, day_of_year: u32) -> f32 {
+        use crate::celestial::time::AXIAL_TILT;
+        
+        let (lat_rad, _) = self.to_radians();
+        
+        // Calculate sun declination for this day
+        let day_angle = 2.0 * PI * (day_of_year as f32 - 79.0) / 365.0;
+        let declination = AXIAL_TILT * day_angle.sin();
+        
+        // Calculate sunrise/sunset hour angle
+        let cos_hour_angle = -(lat_rad.tan() * declination.tan());
+        
+        if cos_hour_angle >= 1.0 {
+            // Polar night
+            0.0
+        } else if cos_hour_angle <= -1.0 {
+            // Polar day
+            24.0
+        } else {
+            // Normal day/night cycle
+            let hour_angle = cos_hour_angle.acos();
+            2.0 * hour_angle * 12.0 / PI  // Convert radians to hours
+        }
     }
 }
 

@@ -2,12 +2,14 @@ use bevy::prelude::*;
 
 // Planet size presets (in chunks)
 pub enum PlanetSize {
-    Tiny,    // 2048x2048 blocks (64x64 chunks)
-    Small,   // 4096x4096 blocks (128x128 chunks)
-    Medium,  // 8192x8192 blocks (256x256 chunks)
-    Default, // 16384x16384 blocks (512x512 chunks)
-    Large,   // 32768x32768 blocks (1024x1024 chunks)
-    Huge,    // 65536x65536 blocks (2048x2048 chunks)
+    Tiny,        // 2048x2048 blocks (64x64 chunks)
+    Small,       // 4096x4096 blocks (128x128 chunks)
+    Medium,      // 8192x8192 blocks (256x256 chunks)
+    Default,     // 16384x16384 blocks (512x512 chunks) - old default
+    Large,       // 32768x32768 blocks (1024x1024 chunks)
+    Huge,        // 65536x65536 blocks (2048x2048 chunks)
+    Realistic,   // 524288x524288 blocks (16384x16384 chunks) ~524km circumference
+    Continental, // 2097152x2097152 blocks (65536x65536 chunks) ~2097km circumference
 }
 
 impl PlanetSize {
@@ -19,20 +21,27 @@ impl PlanetSize {
             PlanetSize::Default => 512,
             PlanetSize::Large => 1024,
             PlanetSize::Huge => 2048,
+            PlanetSize::Realistic => 16384,
+            PlanetSize::Continental => 65536,
         }
     }
     
     pub fn blocks(&self) -> i32 {
         self.chunks() * 32
     }
+    
+    pub fn circumference_km(&self) -> f32 {
+        // Assuming 1 block = 1 meter
+        self.blocks() as f32 / 1000.0
+    }
 }
 
-// Default planet dimensions in chunks
-pub const PLANET_SIZE_CHUNKS: i32 = 512;  // 512x512 chunks = 16384x16384 blocks
+// Default planet dimensions in chunks - now using Realistic size
+pub const PLANET_SIZE_CHUNKS: i32 = 16384;  // 16384x16384 chunks = 524288x524288 blocks
 pub const PLANET_HEIGHT_CHUNKS: i32 = 8;  // 8 chunks tall = 256 blocks
 
 // Planet dimensions in blocks
-pub const PLANET_SIZE_BLOCKS: i32 = PLANET_SIZE_CHUNKS * 32;  // 16384 blocks
+pub const PLANET_SIZE_BLOCKS: i32 = PLANET_SIZE_CHUNKS * 32;  // 524288 blocks
 pub const PLANET_HEIGHT_BLOCKS: i32 = PLANET_HEIGHT_CHUNKS * 32;  // 256 blocks
 
 // World generation constants
