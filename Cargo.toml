@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Your Name"]
 description = "A Minecraft-like MMO with planet-based realms"
+default-run = "forge"
 
 [dependencies]
 bevy = { version = "0.14", features = ["dynamic_linking", "file_watcher"] }

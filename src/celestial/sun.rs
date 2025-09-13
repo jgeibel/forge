@@ -109,21 +109,6 @@ fn update_sun_position(
     
     sun_position.angle_from_horizon = adjusted_altitude;
     
-    // Debug log sun position occasionally
-    static mut LAST_LOG: f32 = 0.0;
-    unsafe {
-        if (game_time.current_hour - LAST_LOG).abs() > 1.0 {
-            info!("Sun Update - Hour: {:.1}, Angle: {:.2} rad ({:.1}°), Dir: ({:.2}, {:.2}, {:.2})", 
-                game_time.current_hour, 
-                adjusted_altitude, 
-                adjusted_altitude * 180.0 / PI,
-                sun_position.direction.x,
-                sun_position.direction.y,
-                sun_position.direction.z
-            );
-            LAST_LOG = game_time.current_hour;
-        }
-    }
 }
 
 fn update_sun_light(
@@ -179,22 +164,43 @@ pub fn calculate_local_sun_angle(
 ) -> f32 {
     // Convert world position to longitude (0 to 2*PI)
     let longitude = (world_x / PLANET_SIZE_BLOCKS as f32) * 2.0 * PI;
-    
+
     // Convert world position to latitude (-PI/2 to PI/2)
-    let latitude = ((world_z / PLANET_SIZE_BLOCKS as f32) - 0.5) * PI;
-    
+    // Use a non-linear mapping to make polar regions smaller while still reaching the poles
+    let normalized_z = world_z / PLANET_SIZE_BLOCKS as f32;
+
+    // Use a sine-based mapping that compresses the polar regions
+    // This makes most of the map temperate while still having small polar regions
+    let lat_factor = (normalized_z - 0.5) * 2.0; // Range from -1 to 1
+
+    // Apply a curve that expands near the poles and compresses the middle
+    // This gives us full -90° to +90° range but with smaller polar circles
+    let latitude = if lat_factor.abs() > 0.85 {
+        // Near the poles - expand to reach ±PI/2
+        let pole_factor = (lat_factor.abs() - 0.85) / 0.15; // 0 to 1 as we approach pole
+        let base_lat = lat_factor.signum() * 66.5 * PI / 180.0; // Arctic/Antarctic circle
+        let pole_lat = lat_factor.signum() * PI / 2.0; // Full pole
+        base_lat + (pole_lat - base_lat) * pole_factor
+    } else {
+        // Temperate zones - compress latitude range
+        lat_factor * 66.5 * PI / 180.0 / 0.85
+    };
+
     // Calculate local solar time based on longitude
     let local_hour = game_time.current_hour + (longitude / PI) * 12.0;
     let local_hour = if local_hour >= 24.0 { local_hour - 24.0 } else { local_hour };
-    
+
     // Calculate sun elevation angle
     let hour_angle = (local_hour - 12.0) * 15.0 * PI / 180.0;
     let declination = game_time.get_sun_declination();
-    
-    // Solar elevation formula
-    let elevation = (latitude.sin() * declination.sin() +
-                    latitude.cos() * declination.cos() * hour_angle.cos()).asin();
-    
+
+    // Solar elevation formula (standard astronomical calculation)
+    let sin_elevation = latitude.sin() * declination.sin() +
+                       latitude.cos() * declination.cos() * hour_angle.cos();
+
+    // Clamp to valid range for asin
+    let elevation = sin_elevation.clamp(-1.0, 1.0).asin();
+
     elevation
 }
 
@@ -235,23 +241,6 @@ fn update_sun_disc_position(
     let to_player = (player_pos - sun_transform.translation).normalize();
     sun_transform.rotation = Quat::from_rotation_arc(Vec3::Z, to_player);
     
-    // Debug log sun position occasionally
-    static mut LAST_SUN_LOG: f32 = 0.0;
-    unsafe {
-        if (game_time.current_hour - LAST_SUN_LOG).abs() > 0.5 {
-            info!("Sun Disc - Hour: {:.1}, Angle: {:.2}°, Pos: ({:.0}, {:.0}, {:.0}), Player: ({:.0}, {:.0}, {:.0})",
-                game_time.current_hour,
-                local_sun_angle * 180.0 / PI,
-                sun_transform.translation.x,
-                sun_transform.translation.y,
-                sun_transform.translation.z,
-                player_pos.x,
-                player_pos.y,
-                player_pos.z
-            );
-            LAST_SUN_LOG = game_time.current_hour;
-        }
-    }
     
     // Hide sun when below horizon
     *visibility = if local_sun_angle <= -0.1 {

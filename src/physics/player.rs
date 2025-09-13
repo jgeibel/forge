@@ -126,7 +126,14 @@ pub fn update_player_physics(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut query: Query<(&mut Transform, &mut CameraController, &mut PlayerPhysics), With<PlayerCamera>>,
     chunk_query: Query<(&Chunk, &ChunkPos)>,
+    command_prompt: Option<Res<crate::ui::CommandPromptState>>,
 ) {
+    // Don't process input if command prompt is open
+    if let Some(prompt) = command_prompt {
+        if prompt.is_open {
+            return;
+        }
+    }
     let Ok((mut transform, mut controller, mut physics)) = query.get_single_mut() else {
         // Don't warn every frame
         return;

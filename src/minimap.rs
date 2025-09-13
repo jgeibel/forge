@@ -263,20 +263,6 @@ fn update_minimap_player_position(
     let map_x = scaled_chunk_x - (map_size / 2.0);
     let map_y = (map_size / 2.0) - scaled_chunk_z; // Flip Z for screen Y
     
-    // Debug: Check if we're getting correct coordinates
-    static mut FRAME_COUNT: u32 = 0;
-    unsafe {
-        FRAME_COUNT += 1;
-        if FRAME_COUNT % 120 == 0 {  // Log every 2 seconds at 60fps
-            info!("Minimap - World: ({:.0}, {:.0}) -> Chunk: ({:.0}, {:.0}) -> Scaled: ({:.0}, {:.0}) -> Map: ({:.0}, {:.0}), Scale: {}",
-                world_pos.x, world_pos.z,
-                chunk_x, chunk_z,
-                scaled_chunk_x, scaled_chunk_z,
-                map_x, map_y,
-                scale_factor
-            );
-        }
-    }
     
     // Get player's facing direction (yaw rotation around Y axis)
     let forward = player_transform.forward();
