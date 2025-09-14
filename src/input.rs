@@ -15,14 +15,8 @@ impl Plugin for InputPlugin {
 fn cursor_grab_system(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut window_query: Query<&mut Window, With<PrimaryWindow>>,
-    command_prompt: Option<Res<crate::ui::CommandPromptState>>,
 ) {
-    // Don't process escape for cursor if command prompt is open
-    if let Some(prompt) = command_prompt {
-        if prompt.is_open {
-            return;
-        }
-    }
+    // Console now handles its own input blocking
     let Ok(mut window) = window_query.get_single_mut() else {
         return;
     };

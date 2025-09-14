@@ -244,7 +244,15 @@ pub fn hotbar_selection_system(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut hotbar: ResMut<Hotbar>,
     mouse: Res<ButtonInput<MouseButton>>,
+    command_prompt_state: Option<Res<crate::ui::command_prompt::CommandPromptState>>,
 ) {
+    // Don't process input if command prompt is open
+    if let Some(prompt_state) = command_prompt_state {
+        if prompt_state.is_open {
+            return;
+        }
+    }
+
     // Number keys 1-9 select hotbar slots
     for i in 1..=9 {
         let key = match i {

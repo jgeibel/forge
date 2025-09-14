@@ -1,7 +1,52 @@
 use bevy::prelude::*;
 use bevy::input::keyboard::KeyboardInput;
+use bevy::input::mouse::MouseWheel;
 use std::collections::HashMap;
 use std::sync::Arc;
+
+// Helper function to wrap text at word boundaries
+fn wrap_text(text: &str, max_width: usize) -> String {
+    let mut result = String::new();
+    for line in text.lines() {
+        if line.len() <= max_width {
+            result.push_str(line);
+            result.push('\n');
+        } else {
+            // For lines that start with spaces (indented), preserve indentation
+            let indent = line.chars().take_while(|c| c.is_whitespace()).count();
+            let indent_str = &line[..indent];
+            let content = &line[indent..];
+
+            let mut current_line = String::new();
+            let mut first_line = true;
+
+            for word in content.split_whitespace() {
+                if current_line.is_empty() {
+                    if first_line {
+                        current_line.push_str(indent_str);
+                        first_line = false;
+                    } else {
+                        // Add indent for continuation lines
+                        current_line.push_str("  ");
+                    }
+                    current_line.push_str(word);
+                } else if current_line.len() + word.len() + 1 <= max_width {
+                    current_line.push(' ');
+                    current_line.push_str(word);
+                } else {
+                    result.push_str(&current_line);
+                    result.push('\n');
+                    current_line = format!("  {}", word);  // Indent continuation lines
+                }
+            }
+            if !current_line.is_empty() {
+                result.push_str(&current_line);
+                result.push('\n');
+            }
+        }
+    }
+    result
+}
 
 #[derive(Component)]
 pub struct CommandPrompt {
@@ -11,6 +56,7 @@ pub struct CommandPrompt {
     pub history_index: Option<usize>,
     pub output_lines: Vec<String>,
     pub max_output_lines: usize,
+    pub scroll_position: f32,
 }
 
 impl Default for CommandPrompt {
@@ -21,7 +67,8 @@ impl Default for CommandPrompt {
             history: Vec::new(),
             history_index: None,
             output_lines: Vec::new(),
-            max_output_lines: 20,
+            max_output_lines: 100,  // Increased from 20 to handle larger outputs
+            scroll_position: 0.0,
         }
     }
 }
@@ -34,6 +81,12 @@ struct CommandInputText;
 
 #[derive(Component)]
 struct CommandOutputText;
+
+#[derive(Component)]
+struct ScrollableContent;
+
+#[derive(Component)]
+struct OutputContainer;
 
 #[derive(Resource, Clone)]
 pub struct CommandRegistry {
@@ -260,6 +313,83 @@ impl CommandRegistry {
                 }
             },
         );
+
+        self.register_command(
+            "planet",
+            "Display current planet information",
+            "/planet",
+            PermissionLevel::Player,
+            |_, world| {
+                if let Some(planet) = world.get_resource::<crate::planet::CelestialData>() {
+                    let temp_c = planet.base_temperature - 273.15;
+                    let temp_f = temp_c * 9.0 / 5.0 + 32.0;
+
+                    let rotation_dir = match planet.rotation_direction {
+                        crate::planet::RotationDirection::Prograde => "Prograde",
+                        crate::planet::RotationDirection::Retrograde => "Retrograde",
+                    };
+
+                    let output = format!(
+                        "\n=== Planet: {} ===\n\n\
+                        Orbital Characteristics:\n\
+                          Distance from sun: {:.3} AU\n\
+                          Orbital period: {:.1} Earth days\n\
+                          Orbital eccentricity: {:.4}\n\
+                          Orbital inclination: {:.1}°\n\n\
+                        Rotational Characteristics:\n\
+                          Day length: {:.1} hours\n\
+                          Axial tilt: {:.1}°\n\
+                          Rotation: {}\n\n\
+                        Physical Properties:\n\
+                          Radius: {:.0} km\n\
+                          Mass: {:.3} Earth masses\n\
+                          Surface gravity: {:.2}g\n\
+                          Escape velocity: {:.1} km/s\n\n\
+                        Atmosphere:\n\
+                          Has atmosphere: {}\n\
+                          Pressure: {:.3} atm\n\
+                          Greenhouse effect: +{:.1}K\n\n\
+                        Climate:\n\
+                          Average temperature: {:.1}°C ({:.1}°F)\n\
+                          Day/night variance: ±{:.1}°C\n\
+                          Albedo: {:.2}\n\n\
+                        Energy:\n\
+                          Solar constant: {:.0} W/m²\n\
+                          Solar ratio: {:.1}x Earth\n\n\
+                        Gameplay:\n\
+                          In-game day length: {:.1} seconds\n\
+                          Days per year: {:.0}",
+                        planet.name,
+                        planet.orbital_radius,
+                        planet.orbital_period,
+                        planet.orbital_eccentricity,
+                        planet.orbital_inclination,
+                        planet.rotation_period,
+                        planet.axial_tilt,
+                        rotation_dir,
+                        planet.radius,
+                        planet.mass,
+                        planet.surface_gravity,
+                        planet.escape_velocity,
+                        if planet.has_atmosphere { "Yes" } else { "No" },
+                        planet.atmospheric_pressure,
+                        planet.greenhouse_effect,
+                        temp_c,
+                        temp_f,
+                        planet.temperature_variance,
+                        planet.albedo,
+                        planet.solar_constant,
+                        planet.solar_constant / 1361.0,
+                        planet.day_length_seconds,
+                        planet.year_length_days
+                    );
+
+                    Ok(output)
+                } else {
+                    Err("Planet data not available".to_string())
+                }
+            },
+        );
     }
     
     pub fn execute_command(&self, input: &str, world: &mut World) -> Result<String, String> {
@@ -295,12 +425,13 @@ pub fn setup_command_prompt(mut commands: Commands) {
             NodeBundle {
                 style: Style {
                     position_type: PositionType::Absolute,
-                    width: Val::Percent(60.0),
-                    height: Val::Percent(40.0),
-                    left: Val::Percent(20.0),
-                    bottom: Val::Percent(30.0),
+                    width: Val::Percent(80.0),
+                    height: Val::Percent(60.0),
+                    left: Val::Percent(10.0),
+                    bottom: Val::Percent(20.0),
                     flex_direction: FlexDirection::Column,
                     padding: UiRect::all(Val::Px(10.0)),
+                    overflow: Overflow::clip(),  // Ensure nothing escapes the console window
                     ..default()
                 },
                 background_color: BackgroundColor(Color::srgba(0.1, 0.1, 0.1, 0.9)),
@@ -311,47 +442,74 @@ pub fn setup_command_prompt(mut commands: Commands) {
             CommandPrompt::default(),
         ))
         .with_children(|parent| {
+            // Scrollable container for output
             parent.spawn((
                 NodeBundle {
                     style: Style {
                         flex_grow: 1.0,
+                        flex_shrink: 1.0,  // Allow shrinking to make room for input
                         flex_direction: FlexDirection::Column,
-                        overflow: Overflow::clip(),
+                        overflow: Overflow::clip_y(),  // Only clip vertical overflow
+                        align_items: AlignItems::Start,
+                        justify_content: JustifyContent::FlexStart,  // Start from top
+                        margin: UiRect::bottom(Val::Px(5.0)),  // Space between output and input
                         ..default()
                     },
                     ..default()
                 },
+                OutputContainer,
             ))
             .with_children(|parent| {
                 parent.spawn((
-                    TextBundle {
+                    NodeBundle {
                         style: Style {
-                            margin: UiRect::bottom(Val::Px(10.0)),
+                            flex_direction: FlexDirection::Column,
+                            align_items: AlignItems::Start,
+                            width: Val::Percent(100.0),
+                            position_type: PositionType::Absolute,  // Absolute positioning for scrolling
                             ..default()
                         },
-                        text: Text::from_section(
-                            "",
-                            TextStyle {
-                                font_size: 14.0,
-                                color: Color::srgb(0.9, 0.9, 0.9),
-                                ..default()
-                            },
-                        ),
                         ..default()
                     },
-                    CommandOutputText,
-                ));
+                    ScrollableContent,
+                ))
+                .with_children(|parent| {
+                    parent.spawn((
+                        TextBundle {
+                            style: Style {
+                                margin: UiRect::all(Val::Px(5.0)),
+                                max_width: Val::Percent(98.0),  // Leave some margin
+                                ..default()
+                            },
+                            text: Text::from_section(
+                                "",
+                                TextStyle {
+                                    font_size: 13.0,  // Slightly smaller for more content
+                                    color: Color::srgb(0.9, 0.9, 0.9),
+                                    ..default()
+                                },
+                            ).with_justify(JustifyText::Left),
+                            ..default()
+                        },
+                        CommandOutputText,
+                    ));
+                });
             });
-            
+
+            // Input field - with flex_shrink: 0 to prevent compression
             parent.spawn((
                 NodeBundle {
                     style: Style {
                         width: Val::Percent(100.0),
                         height: Val::Px(30.0),
+                        min_height: Val::Px(30.0),
+                        max_height: Val::Px(30.0),
+                        flex_shrink: 0.0,  // Never shrink the input field
                         border: UiRect::all(Val::Px(1.0)),
                         padding: UiRect::all(Val::Px(5.0)),
                         flex_direction: FlexDirection::Row,
                         align_items: AlignItems::Center,
+                        overflow: Overflow::clip(),  // Clip all overflow
                         ..default()
                     },
                     background_color: BackgroundColor(Color::srgba(0.05, 0.05, 0.05, 1.0)),
@@ -362,8 +520,12 @@ pub fn setup_command_prompt(mut commands: Commands) {
             .with_children(|parent| {
                 parent.spawn((
                     TextBundle {
+                        style: Style {
+                            flex_shrink: 0.0,
+                            ..default()
+                        },
                         text: Text::from_section(
-                            "/_",
+                            "_",  // Start with just cursor, no slash
                             TextStyle {
                                 font_size: 16.0,
                                 color: Color::srgb(1.0, 1.0, 1.0),
@@ -381,6 +543,7 @@ pub fn setup_command_prompt(mut commands: Commands) {
 pub fn toggle_command_prompt(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut query: Query<(&mut CommandPrompt, &mut Visibility), With<CommandPromptUI>>,
+    mut scrollable_query: Query<&mut Style, With<ScrollableContent>>,
     mut state: ResMut<CommandPromptState>,
     mut window_query: Query<&mut Window, With<bevy::window::PrimaryWindow>>,
     mut events: EventReader<KeyboardInput>,
@@ -399,6 +562,12 @@ pub fn toggle_command_prompt(
             prompt.visible = true;
             state.is_open = true;
             *visibility = Visibility::Visible;
+
+            // Reset scroll position when opening (0 = bottom, natural position)
+            prompt.scroll_position = 0.0;
+            for mut style in scrollable_query.iter_mut() {
+                style.bottom = Val::Px(0.0);
+            }
 
             // Clear buffer and set initial content
             prompt.input_buffer.clear();
@@ -426,6 +595,7 @@ pub fn handle_command_input(
     mut prompt_query: Query<&mut CommandPrompt, With<CommandPromptUI>>,
     mut text_query: Query<&mut Text, With<CommandInputText>>,
     mut output_query: Query<&mut Text, (With<CommandOutputText>, Without<CommandInputText>)>,
+    mut scrollable_query: Query<&mut Style, With<ScrollableContent>>,
     mut world_commands: Commands,
     mut state: ResMut<CommandPromptState>,
     mut window_query: Query<&mut Window, With<bevy::window::PrimaryWindow>>,
@@ -477,11 +647,13 @@ pub fn handle_command_input(
                                     for mut prompt in prompt_query.iter_mut(world) {
                                         if is_clear {
                                             prompt.output_lines.clear();
+                                            prompt.scroll_position = 0.0;  // Top for clear
                                         } else {
                                             prompt.output_lines.push(output_str.clone());
                                             if prompt.output_lines.len() > prompt.max_output_lines {
                                                 prompt.output_lines.remove(0);
                                             }
+                                            // Don't auto-scroll, let user control scrolling
                                         }
                                     }
                                 });
@@ -492,9 +664,11 @@ pub fn handle_command_input(
                                 if prompt.output_lines.len() > prompt.max_output_lines {
                                     prompt.output_lines.remove(0);
                                 }
+                                // Don't auto-scroll, let user control scrolling
                                 info!("Chat message sent: {}", input);
                             }
 
+                            // Clear input buffer completely - no slash added
                             prompt.input_buffer.clear();
                         }
                     }
@@ -508,7 +682,14 @@ pub fn handle_command_input(
                         should_close = true;
                     }
                     KeyCode::ArrowUp => {
-                        if !prompt.history.is_empty() {
+                        // Check if we're in command history mode (no shift) or scrolling mode (shift)
+                        if keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight) {
+                            // Scroll output up
+                            prompt.scroll_position = (prompt.scroll_position + 10.0).min(0.0);  // Reduced from 20.0
+                            for mut style in scrollable_query.iter_mut() {
+                                style.bottom = Val::Px(-prompt.scroll_position);
+                            }
+                        } else if !prompt.history.is_empty() {
                             let index = match prompt.history_index {
                                 Some(i) if i > 0 => i - 1,
                                 None => prompt.history.len() - 1,
@@ -519,7 +700,14 @@ pub fn handle_command_input(
                         }
                     }
                     KeyCode::ArrowDown => {
-                        if let Some(index) = prompt.history_index {
+                        // Check if we're in command history mode (no shift) or scrolling mode (shift)
+                        if keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight) {
+                            // Scroll output down
+                            prompt.scroll_position = (prompt.scroll_position - 10.0).max(-2000.0);  // Reduced from 20.0
+                            for mut style in scrollable_query.iter_mut() {
+                                style.bottom = Val::Px(-prompt.scroll_position);
+                            }
+                        } else if let Some(index) = prompt.history_index {
                             if index < prompt.history.len() - 1 {
                                 prompt.history_index = Some(index + 1);
                                 prompt.input_buffer = prompt.history[index + 1].clone();
@@ -529,11 +717,39 @@ pub fn handle_command_input(
                             }
                         }
                     }
+                    KeyCode::PageUp => {
+                        // Page up for faster scrolling
+                        prompt.scroll_position = (prompt.scroll_position + 50.0).min(0.0);  // Reduced from 100.0
+                        for mut style in scrollable_query.iter_mut() {
+                            style.bottom = Val::Px(-prompt.scroll_position);
+                        }
+                    }
+                    KeyCode::PageDown => {
+                        // Page down for faster scrolling
+                        prompt.scroll_position = (prompt.scroll_position - 50.0).max(-2000.0);  // Reduced from 100.0
+                        for mut style in scrollable_query.iter_mut() {
+                            style.bottom = Val::Px(-prompt.scroll_position);
+                        }
+                    }
+                    KeyCode::Home => {
+                        // Go to top
+                        prompt.scroll_position = 0.0;
+                        for mut style in scrollable_query.iter_mut() {
+                            style.bottom = Val::Px(0.0);
+                        }
+                    }
+                    KeyCode::End => {
+                        // Go to bottom (natural position)
+                        prompt.scroll_position = 0.0;
+                        for mut style in scrollable_query.iter_mut() {
+                            style.bottom = Val::Px(0.0);
+                        }
+                    }
                     _ => {
                         // Handle alphanumeric and special characters
                         // Check if shift is pressed for uppercase
                         let shift_pressed = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
-                        
+
                         let character = match key_code {
                             KeyCode::KeyA => Some(if shift_pressed { 'A' } else { 'a' }),
                             KeyCode::KeyB => Some(if shift_pressed { 'B' } else { 'b' }),
@@ -584,25 +800,35 @@ pub fn handle_command_input(
                             KeyCode::Backslash => Some(if shift_pressed { '|' } else { '\\' }),
                             _ => None,
                         };
-                        
+
                         if let Some(ch) = character {
                             prompt.input_buffer.push(ch);
+
+                            // Auto-scroll to bottom when typing (0 is natural position)
+                            if prompt.scroll_position != 0.0 {
+                                prompt.scroll_position = 0.0;  // Reset to natural position
+                                for mut style in scrollable_query.iter_mut() {
+                                    style.bottom = Val::Px(0.0);
+                                }
+                            }
                         }
                     }
             }
         }
         
         // Update input text with a blinking cursor
-        let cursor = if (time.elapsed_seconds() * 2.0) as i32 % 2 == 0 { "_" } else { "" };
-        // No prefix needed - just show the input buffer with cursor
+        let cursor = if (time.elapsed_seconds() * 2.0) as i32 % 2 == 0 { "_" } else { " " };
+        // Show input buffer with cursor - no prefix unless user typed it
         let display_text = format!("{}{}", prompt.input_buffer, cursor);
-        
+
         for mut text in text_query.iter_mut() {
             text.sections[0].value = display_text.clone();
         }
         
         for mut text in output_query.iter_mut() {
-            text.sections[0].value = prompt.output_lines.join("\n");
+            // Join lines and wrap long text
+            let output = prompt.output_lines.join("\n");
+            text.sections[0].value = wrap_text(&output, 120);  // Wrap at ~120 chars
         }
     }
     
@@ -621,6 +847,30 @@ pub fn handle_command_input(
     }
 }
 
+pub fn handle_mouse_scroll(
+    mut mouse_wheel: EventReader<MouseWheel>,
+    mut prompt_query: Query<&mut CommandPrompt, With<CommandPromptUI>>,
+    mut scrollable_query: Query<&mut Style, With<ScrollableContent>>,
+) {
+    for mut prompt in prompt_query.iter_mut() {
+        if !prompt.visible {
+            continue;
+        }
+
+        for event in mouse_wheel.read() {
+            // Scroll based on mouse wheel delta
+            let scroll_amount = event.y * 5.0;  // Reduced from 20.0 for smoother scrolling
+            prompt.scroll_position = (prompt.scroll_position + scroll_amount)
+                .clamp(-2000.0, 0.0);  // Clamp between reasonable bounds
+
+            // Update the scrollable content position
+            for mut style in scrollable_query.iter_mut() {
+                style.bottom = Val::Px(-prompt.scroll_position);
+            }
+        }
+    }
+}
+
 pub struct CommandPromptPlugin;
 
 impl Plugin for CommandPromptPlugin {
@@ -635,6 +885,7 @@ impl Plugin for CommandPromptPlugin {
                 (
                     toggle_command_prompt,
                     handle_command_input,
+                    handle_mouse_scroll,
                 ),
             );
     }

@@ -64,7 +64,15 @@ fn simple_test_movement(
     time: Res<Time>,
     keyboard: Res<ButtonInput<KeyCode>>,
     mut query: Query<&mut Transform, With<PlayerCamera>>,
+    command_prompt_state: Option<Res<crate::ui::command_prompt::CommandPromptState>>,
 ) {
+    // Don't process input if command prompt is open
+    if let Some(prompt_state) = command_prompt_state {
+        if prompt_state.is_open {
+            return;
+        }
+    }
+
     let Ok(mut transform) = query.get_single_mut() else {
         static mut LOGGED: bool = false;
         unsafe {
@@ -126,11 +134,11 @@ pub fn update_player_physics(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut query: Query<(&mut Transform, &mut CameraController, &mut PlayerPhysics), With<PlayerCamera>>,
     chunk_query: Query<(&Chunk, &ChunkPos)>,
-    command_prompt: Option<Res<crate::ui::CommandPromptState>>,
+    command_prompt_state: Option<Res<crate::ui::command_prompt::CommandPromptState>>,
 ) {
     // Don't process input if command prompt is open
-    if let Some(prompt) = command_prompt {
-        if prompt.is_open {
+    if let Some(prompt_state) = command_prompt_state {
+        if prompt_state.is_open {
             return;
         }
     }

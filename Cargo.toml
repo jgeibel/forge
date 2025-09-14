@@ -8,7 +8,9 @@ default-run = "forge"
 
 [dependencies]
 bevy = { version = "0.14", features = ["dynamic_linking", "file_watcher"] }
-bevy_egui = "0.30"
+# bevy_console = { path = "bevy_console_chat" }  # Disabled - using custom CommandPromptPlugin
+# bevy_egui = "0.30"  # Only needed for bevy_console
+# clap = { version = "4", features = ["derive"] }  # Only needed for bevy_console
 noise = "0.9"
 bytemuck = "1.16"
 image = "0.24"

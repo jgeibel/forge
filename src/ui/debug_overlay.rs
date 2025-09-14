@@ -5,6 +5,7 @@ use crate::chunk::{Chunk, ChunkPos, CHUNK_SIZE, CHUNK_SIZE_F32};
 use crate::loading::GameState;
 use crate::world::CurrentTemperature;
 use crate::celestial::time::GameTime;
+use crate::planet::CelestialData;
 
 #[derive(Resource)]
 pub struct DebugOverlayState {
@@ -85,6 +86,7 @@ fn update_debug_text(
     chunk_query: Query<(&Chunk, &ChunkPos)>,
     debug_state: Res<DebugOverlayState>,
     game_time: Res<GameTime>,
+    planet: Res<CelestialData>,
 ) {
     let Ok((transform, physics, controller)) = player_query.get_single() else {
         return;
@@ -143,6 +145,11 @@ fn update_debug_text(
          Velocity Y: {:.2}\n\
          Fly Mode: {}\n\
          \n\
+         Planet: {}\n\
+         Distance from sun: {} AU\n\
+         Day length: {} hours\n\
+         Gravity: {}g\n\
+         \n\
          Expected feet on ground: Y = {}.00\n\
          Actual difference: {:.3}",
         transform.translation.x,
@@ -160,6 +167,10 @@ fn update_debug_text(
         physics.is_grounded,
         physics.velocity.y,
         controller.fly_mode,
+        planet.name,
+        planet.orbital_radius,
+        planet.rotation_period,
+        planet.surface_gravity,
         ground_y as i32,
         feet_pos.y - ground_y,
         );
@@ -171,20 +182,22 @@ fn update_debug_text(
         let hour = game_time.current_hour as u32;
         let minute = ((game_time.current_hour - hour as f32) * 60.0) as u32;
         let day = game_time.current_day;
+        let time_string = format!("Day {} - {:02}:{:02}", day + 1, hour, minute);
         
-        // Simple display with position, temperature, and time  
+        // Simple display with position, temperature, time, and planet info
         text.sections[1].value = format!(
             "Position: X={:.0}, Y={:.0}, Z={:.0}\n\
              Temperature: {:.1}°C\n\
-             Time: Day {} {:02}:{:02}\n\
+             {}\n\
+             Planet: {} ({:.1}g gravity)\n\
              {}",
             transform.translation.x,
             transform.translation.y,
             transform.translation.z,
             temperature.celsius,
-            day,
-            hour,
-            minute,
+            time_string,
+            planet.name,
+            planet.surface_gravity,
             if controller.fly_mode { "🚁 Fly Mode" } else { "" }
         );
     }

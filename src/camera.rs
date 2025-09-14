@@ -217,15 +217,8 @@ fn setup_camera(
 fn camera_look(
     mut motion_events: EventReader<MouseMotion>,
     mut query: Query<(&mut Transform, &mut CameraController), With<PlayerCamera>>,
-    command_prompt: Option<Res<crate::ui::CommandPromptState>>,
 ) {
-    // Don't process mouse input if command prompt is open
-    if let Some(prompt) = command_prompt {
-        if prompt.is_open {
-            motion_events.clear();
-            return;
-        }
-    }
+    // Console now handles its own input blocking
     let Ok((mut transform, mut controller)) = query.get_single_mut() else {
         return;
     };
