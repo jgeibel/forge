@@ -148,10 +148,10 @@ fn update_sun_light(
         } else {
             // Day time
             let intensity = (angle / (PI / 2.0)).min(1.0);  // Max at noon
-            light.illuminance = 10000.0 + 5000.0 * intensity;
+            light.illuminance = 30000.0 + 50000.0 * intensity;  // 30k-80k lux for bright daylight
             light.color = Color::WHITE;
-            ambient_light.brightness = 150.0 + 50.0 * intensity;
-            ambient_light.color = Color::srgb(0.9, 0.95, 1.0);  // Slight blue tint for sky
+            ambient_light.brightness = 400.0 + 300.0 * intensity;  // Much brighter ambient (400-700)
+            ambient_light.color = Color::srgb(0.95, 0.98, 1.0);  // Slight blue tint for sky
         }
     }
 }

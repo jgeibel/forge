@@ -79,7 +79,7 @@ pub struct CommandPromptState {
 impl Default for PlayerPermissions {
     fn default() -> Self {
         Self {
-            level: PermissionLevel::Player,
+            level: PermissionLevel::Admin,  // Default to Admin for development
         }
     }
 }
@@ -148,17 +148,24 @@ impl CommandRegistry {
         self.register_command(
             "time",
             "Set or display the time of day",
-            "/time [set <hour>|add <hours>|query]",
+            "/time [set <hour>|add <hours>]",
             PermissionLevel::Admin,
             |args, world| {
+                // If no arguments, show current time
                 if args.len() < 2 {
-                    return Err("Usage: /time [set <hour>|add <hours>|query]".to_string());
+                    if let Some(time) = world.get_resource::<crate::celestial::time::GameTime>() {
+                        return Ok(format!("Current time: {:.2}:00 (Day {} of Year {})",
+                            time.current_hour, time.current_day, time.current_year));
+                    } else {
+                        return Err("Time system not available".to_string());
+                    }
                 }
-                
+
                 match args[1] {
                     "query" => {
+                        // Keep for backwards compatibility
                         if let Some(time) = world.get_resource::<crate::celestial::time::GameTime>() {
-                            Ok(format!("Current time: {:.2}:00 (Day {} of Year {})", 
+                            Ok(format!("Current time: {:.2}:00 (Day {} of Year {})",
                                 time.current_hour, time.current_day, time.current_year))
                         } else {
                             Err("Time system not available".to_string())
@@ -199,7 +206,7 @@ impl CommandRegistry {
                             Err("Invalid hours value".to_string())
                         }
                     }
-                    _ => Err("Unknown subcommand. Use set, add, or query".to_string()),
+                    _ => Err("Unknown subcommand. Use 'set <hour>' or 'add <hours>', or no arguments to display current time".to_string()),
                 }
             },
         );
