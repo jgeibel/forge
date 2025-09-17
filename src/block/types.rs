@@ -11,7 +11,7 @@ pub enum BlockType {
     Water = 7,
     Cobblestone = 8,
     Planks = 9,
-    Bedrock = 10,  // Unbreakable planet core
+    Bedrock = 10, // Unbreakable planet core
     Snow = 11,
     Ice = 12,
     PackedIce = 13,
@@ -21,15 +21,18 @@ impl BlockType {
     pub fn is_solid(&self) -> bool {
         !matches!(self, BlockType::Air | BlockType::Water)
     }
-    
+
     pub fn is_breakable(&self) -> bool {
         !matches!(self, BlockType::Bedrock)
     }
-    
+
     pub fn is_transparent(&self) -> bool {
-        matches!(self, BlockType::Air | BlockType::Water | BlockType::Leaves | BlockType::Ice)
+        matches!(
+            self,
+            BlockType::Air | BlockType::Water | BlockType::Leaves | BlockType::Ice
+        )
     }
-    
+
     /// Base time in seconds to extract this block with bare hands
     pub fn extraction_time(&self) -> f32 {
         match self {
@@ -44,15 +47,15 @@ impl BlockType {
             BlockType::Water => 0.0, // Cannot be extracted as a block
         }
     }
-    
+
     pub fn is_visible(&self) -> bool {
         !matches!(self, BlockType::Air)
     }
-    
+
     pub fn is_liquid(&self) -> bool {
         matches!(self, BlockType::Water)
     }
-    
+
     pub fn get_texture_name(&self) -> &str {
         match self {
             BlockType::Air => "air",
@@ -71,13 +74,13 @@ impl BlockType {
             BlockType::PackedIce => "packed_ice",
         }
     }
-    
+
     pub fn get_texture_indices(&self) -> [u32; 6] {
         match self {
             BlockType::Air => [0; 6],
             BlockType::Stone => [1, 1, 1, 1, 1, 1],
             BlockType::Dirt => [2, 2, 2, 2, 2, 2],
-            BlockType::Grass => [0, 2, 3, 3, 3, 3], 
+            BlockType::Grass => [0, 2, 3, 3, 3, 3],
             BlockType::Wood => [5, 5, 4, 4, 4, 4],
             BlockType::Leaves => [6, 6, 6, 6, 6, 6],
             BlockType::Sand => [7, 7, 7, 7, 7, 7],
@@ -90,7 +93,7 @@ impl BlockType {
             BlockType::PackedIce => [14, 14, 14, 14, 14, 14],
         }
     }
-    
+
     pub fn get_color(&self) -> [f32; 4] {
         match self {
             BlockType::Grass => [0.5, 0.8, 0.3, 1.0],

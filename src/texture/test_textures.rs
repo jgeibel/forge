@@ -1,18 +1,18 @@
-use image::{RgbaImage, Rgba};
+use image::{Rgba, RgbaImage};
 use std::path::Path;
 
 pub fn generate_test_textures() {
     let texture_dir = Path::new("assets/textures/blocks");
-    
+
     // Generate grass textures
     generate_grass_textures(&texture_dir.join("grass"));
-    
+
     // Generate stone texture
     generate_stone_texture(&texture_dir.join("stone"));
-    
+
     // Generate dirt texture
     generate_dirt_texture(&texture_dir.join("dirt"));
-    
+
     // Generate missing block textures
     generate_water_texture(&texture_dir.join("water"));
     generate_sand_texture(&texture_dir.join("sand"));
@@ -21,13 +21,13 @@ pub fn generate_test_textures() {
     generate_leaves_texture(&texture_dir.join("leaves"));
     generate_cobblestone_texture(&texture_dir.join("cobblestone"));
     generate_planks_texture(&texture_dir.join("planks"));
-    
+
     println!("Test textures generated successfully!");
 }
 
 fn generate_grass_textures(dir: &Path) {
     std::fs::create_dir_all(dir).ok();
-    
+
     // Grass top - green with variation
     let mut top = RgbaImage::new(32, 32);
     for y in 0..32 {
@@ -38,7 +38,7 @@ fn generate_grass_textures(dir: &Path) {
         }
     }
     top.save(dir.join("top.png")).unwrap();
-    
+
     // Grass side - dirt with grass on top
     let mut side = RgbaImage::new(32, 32);
     for y in 0..32 {
@@ -56,7 +56,7 @@ fn generate_grass_textures(dir: &Path) {
         }
     }
     side.save(dir.join("side.png")).unwrap();
-    
+
     // Grass bottom - just dirt
     let mut bottom = RgbaImage::new(32, 32);
     for y in 0..32 {
@@ -71,7 +71,7 @@ fn generate_grass_textures(dir: &Path) {
 
 fn generate_stone_texture(dir: &Path) {
     std::fs::create_dir_all(dir).ok();
-    
+
     let mut stone = RgbaImage::new(32, 32);
     for y in 0..32 {
         for x in 0..32 {
@@ -86,7 +86,7 @@ fn generate_stone_texture(dir: &Path) {
 
 fn generate_dirt_texture(dir: &Path) {
     std::fs::create_dir_all(dir).ok();
-    
+
     let mut dirt = RgbaImage::new(32, 32);
     for y in 0..32 {
         for x in 0..32 {
@@ -100,7 +100,7 @@ fn generate_dirt_texture(dir: &Path) {
 
 fn generate_water_texture(dir: &Path) {
     std::fs::create_dir_all(dir).ok();
-    
+
     let mut water = RgbaImage::new(32, 32);
     for y in 0..32 {
         for x in 0..32 {
@@ -117,7 +117,7 @@ fn generate_water_texture(dir: &Path) {
 
 fn generate_sand_texture(dir: &Path) {
     std::fs::create_dir_all(dir).ok();
-    
+
     let mut sand = RgbaImage::new(32, 32);
     for y in 0..32 {
         for x in 0..32 {
@@ -133,7 +133,7 @@ fn generate_sand_texture(dir: &Path) {
 
 fn generate_bedrock_texture(dir: &Path) {
     std::fs::create_dir_all(dir).ok();
-    
+
     let mut bedrock = RgbaImage::new(32, 32);
     for y in 0..32 {
         for x in 0..32 {
@@ -147,7 +147,7 @@ fn generate_bedrock_texture(dir: &Path) {
 
 fn generate_wood_texture(dir: &Path) {
     std::fs::create_dir_all(dir).ok();
-    
+
     let mut wood = RgbaImage::new(32, 32);
     for y in 0..32 {
         for x in 0..32 {
@@ -165,7 +165,7 @@ fn generate_wood_texture(dir: &Path) {
 
 fn generate_leaves_texture(dir: &Path) {
     std::fs::create_dir_all(dir).ok();
-    
+
     let mut leaves = RgbaImage::new(32, 32);
     for y in 0..32 {
         for x in 0..32 {
@@ -180,17 +180,17 @@ fn generate_leaves_texture(dir: &Path) {
 
 fn generate_cobblestone_texture(dir: &Path) {
     std::fs::create_dir_all(dir).ok();
-    
+
     let mut cobble = RgbaImage::new(32, 32);
     for y in 0..32 {
         for x in 0..32 {
             // Create a cobblestone pattern
             let is_gap = (x % 8 == 0 || x % 8 == 7) || (y % 8 == 0 || y % 8 == 7);
             let noise = ((x * 3 + y * 5) % 11) as f32 / 11.0;
-            let gray = if is_gap { 
-                60 + (noise * 20.0) as u8 
-            } else { 
-                100 + (noise * 40.0) as u8 
+            let gray = if is_gap {
+                60 + (noise * 20.0) as u8
+            } else {
+                100 + (noise * 40.0) as u8
             };
             cobble.put_pixel(x, y, Rgba([gray, gray, gray, 255]));
         }
@@ -200,7 +200,7 @@ fn generate_cobblestone_texture(dir: &Path) {
 
 fn generate_planks_texture(dir: &Path) {
     std::fs::create_dir_all(dir).ok();
-    
+
     let mut planks = RgbaImage::new(32, 32);
     for y in 0..32 {
         for x in 0..32 {

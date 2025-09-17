@@ -1,6 +1,6 @@
+use crate::block::BlockType;
 use bevy::prelude::*;
 use rand::prelude::*;
-use crate::block::BlockType;
 
 const PARTICLE_LIFETIME: f32 = 1.5;
 const PARTICLE_GRAVITY: f32 = -9.8;
@@ -32,7 +32,7 @@ impl ParticleType {
             _ => None,
         }
     }
-    
+
     fn get_color(&self) -> Color {
         match self {
             ParticleType::Dirt => Color::srgb(0.4, 0.3, 0.2),
@@ -42,7 +42,7 @@ impl ParticleType {
             ParticleType::Ice => Color::srgb(0.8, 0.9, 1.0),
         }
     }
-    
+
     fn is_spark(&self) -> bool {
         matches!(self, ParticleType::Stone)
     }
@@ -59,10 +59,10 @@ pub fn spawn_extraction_particles(
     let Some(particle_type) = ParticleType::from_block_type(block_type) else {
         return;
     };
-    
+
     let mut rng = thread_rng();
     let num_particles = ((3.0 + intensity * 5.0) as usize).min(8);
-    
+
     // Spawn particles from edges where cutting is happening
     for _ in 0..num_particles {
         // Random edge position
@@ -83,9 +83,9 @@ pub fn spawn_extraction_particles(
             10 => Vec3::new(-0.5, rng.gen_range(-0.5..0.5), 0.5),
             _ => Vec3::new(0.5, rng.gen_range(-0.5..0.5), 0.5),
         };
-        
+
         let spawn_pos = position + edge_offset;
-        
+
         // Velocity based on particle type
         let base_velocity = if particle_type.is_spark() {
             // Sparks fly outward quickly
@@ -102,15 +102,15 @@ pub fn spawn_extraction_particles(
                 rng.gen_range(-1.5..1.5),
             )
         };
-        
+
         let particle_size = if particle_type.is_spark() {
-            rng.gen_range(0.01..0.02)  // Tiny sparks
+            rng.gen_range(0.01..0.02) // Tiny sparks
         } else {
-            rng.gen_range(0.02..0.04)  // Small debris particles
+            rng.gen_range(0.02..0.04) // Small debris particles
         };
-        
+
         let mesh = meshes.add(Cuboid::new(particle_size, particle_size, particle_size));
-        
+
         // Add emissive for sparks
         let material = if particle_type.is_spark() {
             materials.add(StandardMaterial {
@@ -125,7 +125,7 @@ pub fn spawn_extraction_particles(
                 ..default()
             })
         };
-        
+
         commands.spawn((
             PbrBundle {
                 mesh,
@@ -149,14 +149,14 @@ pub fn update_particles(
 ) {
     for (entity, mut transform, mut particle) in particles.iter_mut() {
         let dt = time.delta_seconds();
-        
+
         // Update lifetime
         particle.lifetime -= dt;
         if particle.lifetime <= 0.0 {
             commands.entity(entity).despawn();
             continue;
         }
-        
+
         // Apply physics
         if !particle.particle_type.is_spark() {
             // Gravity for non-spark particles
@@ -165,14 +165,14 @@ pub fn update_particles(
             // Sparks slow down but don't fall as much
             particle.velocity *= 0.95;
         }
-        
+
         // Update position
         transform.translation += particle.velocity * dt;
-        
+
         // Fade out
         let alpha = particle.lifetime / PARTICLE_LIFETIME;
         transform.scale = Vec3::splat(transform.scale.x * alpha.sqrt());
-        
+
         // Simple ground collision
         if transform.translation.y < 0.0 {
             transform.translation.y = 0.0;

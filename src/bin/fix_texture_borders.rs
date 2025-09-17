@@ -18,36 +18,36 @@ fn fix_texture_borders() {
         let path = Path::new(path_str);
         if path.exists() {
             println!("Checking {}", path_str);
-            
+
             if let Ok(img) = image::open(path) {
                 let rgba = img.to_rgba8();
                 let (width, height) = rgba.dimensions();
-                
+
                 // Check if edges are dark
                 let mut has_dark_border = false;
-                
+
                 // Check top and bottom edges
                 for x in 0..width {
                     let top_pixel = rgba.get_pixel(x, 0);
                     let bottom_pixel = rgba.get_pixel(x, height - 1);
-                    
+
                     if is_dark(top_pixel) || is_dark(bottom_pixel) {
                         has_dark_border = true;
                         break;
                     }
                 }
-                
+
                 // Check left and right edges
                 for y in 0..height {
                     let left_pixel = rgba.get_pixel(0, y);
                     let right_pixel = rgba.get_pixel(width - 1, y);
-                    
+
                     if is_dark(left_pixel) || is_dark(right_pixel) {
                         has_dark_border = true;
                         break;
                     }
                 }
-                
+
                 if has_dark_border {
                     println!("  Found dark borders, fixing...");
                     let fixed = remove_borders(&rgba);
@@ -70,7 +70,7 @@ fn is_dark(pixel: &Rgba<u8>) -> bool {
 fn remove_borders(img: &ImageBuffer<Rgba<u8>, Vec<u8>>) -> ImageBuffer<Rgba<u8>, Vec<u8>> {
     let (width, height) = img.dimensions();
     let mut result = img.clone();
-    
+
     // Copy second row/column pixels to edges to remove borders
     for x in 0..width {
         // Top edge - copy from second row
@@ -84,7 +84,7 @@ fn remove_borders(img: &ImageBuffer<Rgba<u8>, Vec<u8>>) -> ImageBuffer<Rgba<u8>,
             result.put_pixel(x, height - 1, pixel);
         }
     }
-    
+
     for y in 0..height {
         // Left edge - copy from second column
         if width > 1 {
@@ -97,6 +97,6 @@ fn remove_borders(img: &ImageBuffer<Rgba<u8>, Vec<u8>>) -> ImageBuffer<Rgba<u8>,
             result.put_pixel(width - 1, y, pixel);
         }
     }
-    
+
     result
 }

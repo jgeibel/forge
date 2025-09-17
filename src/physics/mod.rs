@@ -1,5 +1,5 @@
-pub mod player;
 pub mod collision;
+pub mod player;
 
 pub use player::PlayerPhysics;
 

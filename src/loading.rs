@@ -14,10 +14,6 @@ pub enum GameState {
 pub enum LoadingPhase {
     Initializing,
     GeneratingTerrain,
-    PlacingBiomes,
-    CarvingCaves,
-    PlacingOres,
-    BuildingChunks,
     PreparingSpawn,
     Complete,
 }
@@ -26,11 +22,7 @@ impl LoadingPhase {
     pub fn description(&self) -> &str {
         match self {
             LoadingPhase::Initializing => "Initializing world generator...",
-            LoadingPhase::GeneratingTerrain => "Generating continental terrain...",
-            LoadingPhase::PlacingBiomes => "Creating diverse biomes...",
-            LoadingPhase::CarvingCaves => "Carving cave systems...",
-            LoadingPhase::PlacingOres => "Placing ore deposits...",
-            LoadingPhase::BuildingChunks => "Building initial chunks...",
+            LoadingPhase::GeneratingTerrain => "Generating base terrain...",
             LoadingPhase::PreparingSpawn => "Preparing spawn area...",
             LoadingPhase::Complete => "World ready!",
         }
@@ -45,7 +37,7 @@ pub struct LoadingProgress {
     pub current_phase: LoadingPhase,
     pub phase_start_time: f32,
     pub total_start_time: f32,
-    pub spawn_position: Option<Vec3>,  // Determined spawn position
+    pub spawn_position: Option<Vec3>, // Determined spawn position
 }
 
 impl Default for LoadingProgress {
@@ -66,30 +58,23 @@ impl LoadingProgress {
         // Calculate progress based on current phase
         match self.current_phase {
             LoadingPhase::Initializing => 0.0,
-            LoadingPhase::GeneratingTerrain => 10.0,
-            LoadingPhase::PlacingBiomes => 20.0,
-            LoadingPhase::CarvingCaves => 30.0,
-            LoadingPhase::PlacingOres => 40.0,
-            LoadingPhase::BuildingChunks => {
-                // Building chunks takes from 40% to 90%
-                if self.total_chunks == 0 {
-                    40.0
-                } else {
-                    let chunk_progress = (self.chunks_generated as f32 / self.total_chunks as f32).min(1.0);
-                    40.0 + (chunk_progress * 50.0)
-                }
-            },
-            LoadingPhase::PreparingSpawn => 95.0,
+            LoadingPhase::GeneratingTerrain => 40.0,
+            LoadingPhase::PreparingSpawn => 80.0,
             LoadingPhase::Complete => 100.0,
         }
     }
-    
+
     pub fn is_complete(&self) -> bool {
         self.current_phase == LoadingPhase::Complete
     }
-    
+
     pub fn advance_phase(&mut self, new_phase: LoadingPhase, time: f32) {
-        info!("Loading phase: {:?} -> {:?} ({}%)", self.current_phase, new_phase, self.progress_percentage());
+        info!(
+            "Loading phase: {:?} -> {:?} ({}%)",
+            self.current_phase,
+            new_phase,
+            self.progress_percentage()
+        );
         self.current_phase = new_phase;
         self.phase_start_time = time;
     }
@@ -100,23 +85,22 @@ pub struct LoadingPlugin;
 
 impl Plugin for LoadingPlugin {
     fn build(&self, app: &mut App) {
-        app
-            .init_state::<GameState>()
+        app.init_state::<GameState>()
             .init_resource::<LoadingProgress>()
             .add_systems(OnEnter(GameState::Loading), setup_loading)
             .add_systems(Update, update_loading.run_if(in_state(GameState::Loading)))
             .add_systems(OnExit(GameState::Loading), cleanup_loading)
             .add_systems(OnEnter(GameState::GeneratingWorld), setup_world_generation)
-            .add_systems(Update, update_world_generation.run_if(in_state(GameState::GeneratingWorld)))
+            .add_systems(
+                Update,
+                update_world_generation.run_if(in_state(GameState::GeneratingWorld)),
+            )
             .add_systems(OnExit(GameState::GeneratingWorld), cleanup_world_generation)
             .add_systems(OnEnter(GameState::Playing), setup_gameplay);
     }
 }
 
-fn setup_loading(
-    mut loading_progress: ResMut<LoadingProgress>,
-    time: Res<Time>,
-) {
+fn setup_loading(mut loading_progress: ResMut<LoadingProgress>, time: Res<Time>) {
     loading_progress.total_start_time = time.elapsed_seconds();
     loading_progress.phase_start_time = time.elapsed_seconds();
     info!("Entering loading state");
@@ -131,24 +115,14 @@ fn update_loading(
     // Simulate world generation phases with brief delays
     let phase_duration = 0.3; // Each early phase takes 0.3 seconds
     let elapsed_since_phase = time.elapsed_seconds() - loading_progress.phase_start_time;
-    
+
     match loading_progress.current_phase {
         LoadingPhase::Initializing if world_gen.is_some() && elapsed_since_phase > 0.5 => {
             loading_progress.advance_phase(LoadingPhase::GeneratingTerrain, time.elapsed_seconds());
-        },
+        }
         LoadingPhase::GeneratingTerrain if elapsed_since_phase > phase_duration => {
-            loading_progress.advance_phase(LoadingPhase::PlacingBiomes, time.elapsed_seconds());
-        },
-        LoadingPhase::PlacingBiomes if elapsed_since_phase > phase_duration => {
-            loading_progress.advance_phase(LoadingPhase::CarvingCaves, time.elapsed_seconds());
-        },
-        LoadingPhase::CarvingCaves if elapsed_since_phase > phase_duration => {
-            loading_progress.advance_phase(LoadingPhase::PlacingOres, time.elapsed_seconds());
-        },
-        LoadingPhase::PlacingOres if elapsed_since_phase > phase_duration => {
-            // Now transition to actual world generation
             next_state.set(GameState::GeneratingWorld);
-        },
+        }
         _ => {}
     }
 }
@@ -161,16 +135,23 @@ fn setup_world_generation(
     mut loading_progress: ResMut<LoadingProgress>,
     world_gen: Res<crate::world::WorldGenerator>,
     planet_config: Res<crate::planet::PlanetConfig>,
+    time: Res<Time>,
 ) {
     // Reset progress counter when entering world generation
     loading_progress.chunks_generated = 0;
-    
+
     // Determine spawn position before generating chunks
     let planet_size = planet_config.size_chunks as f32 * 32.0;
     let spawn_pos = crate::camera::find_guaranteed_land_spawn(&world_gen, planet_size);
     loading_progress.spawn_position = Some(spawn_pos);
-    
-    info!("Starting world generation at spawn position: {:?}", spawn_pos);
+
+    loading_progress.advance_phase(LoadingPhase::PreparingSpawn, time.elapsed_seconds());
+    loading_progress.advance_phase(LoadingPhase::Complete, time.elapsed_seconds());
+
+    info!(
+        "Starting world generation at spawn position: {:?}",
+        spawn_pos
+    );
 }
 
 fn update_world_generation(

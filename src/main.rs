@@ -1,41 +1,39 @@
 use bevy::prelude::*;
 use bevy::window::PresentMode;
 
-mod camera;
 mod block;
+mod camera;
+mod celestial;
 mod chunk;
-mod render;
+mod fog;
 mod input;
 mod interaction;
 mod inventory;
 mod items;
-mod tools;
-mod particles;
-mod planet;
-mod fog;
-mod ui;
-mod texture;
-mod world;
 mod loading;
-mod minimap;
+mod particles;
 mod physics;
-mod celestial;
+mod planet;
+mod render;
+mod texture;
+mod tools;
+mod ui;
+mod world;
 
-use camera::CameraPlugin;
 use block::BlockPlugin;
+use camera::CameraPlugin;
+use celestial::CelestialPlugin;
 use chunk::ChunkPlugin;
-use render::RenderPlugin;
+use fog::FogPlugin;
 use input::InputPlugin;
 use inventory::InventoryPlugin;
-use planet::PlanetPlugin;
-use fog::FogPlugin;
-use ui::UIPlugin;
-use texture::TexturePlugin;
-use world::WorldPlugin;
-use loading::{LoadingPlugin, GameState};
-use minimap::MinimapPlugin;
+use loading::{GameState, LoadingPlugin};
 use physics::PhysicsPlugin;
-use celestial::CelestialPlugin;
+use planet::PlanetPlugin;
+use render::RenderPlugin;
+use texture::TexturePlugin;
+use ui::UIPlugin;
+use world::WorldPlugin;
 
 fn main() {
     App::new()
@@ -49,34 +47,37 @@ fn main() {
             ..default()
         }))
         .add_plugins((
-            LoadingPlugin,  // Add loading first to manage states
+            LoadingPlugin, // Add loading first to manage states
             CameraPlugin,
-            PhysicsPlugin,  // Add physics after camera
+            PhysicsPlugin, // Add physics after camera
             BlockPlugin,
-            WorldPlugin,  // Add before ChunkPlugin since chunks depend on world gen
+            WorldPlugin, // Add before ChunkPlugin since chunks depend on world gen
             ChunkPlugin,
             RenderPlugin,
             InputPlugin,
-            InventoryPlugin,  // Add inventory system
+            InventoryPlugin, // Add inventory system
             PlanetPlugin,
-            CelestialPlugin,  // Add celestial system for day/night cycle
+            CelestialPlugin, // Add celestial system for day/night cycle
             FogPlugin,
             UIPlugin,
             TexturePlugin,
-            MinimapPlugin,
         ))
         .init_resource::<interaction::SelectedBlock>()
         .init_resource::<interaction::BlockExtractionState>()
         .add_systems(OnEnter(GameState::Playing), setup)
-        .add_systems(Update, (
-            interaction::block_interaction_system,
-            interaction::update_extraction_visual,
-            interaction::draw_selection_box,
-            items::update_dropped_items,
-            items::apply_item_collisions,  // Add collision system after physics update
-            items::collect_items,
-            particles::update_particles,
-        ).run_if(in_state(GameState::Playing)))
+        .add_systems(
+            Update,
+            (
+                interaction::block_interaction_system,
+                interaction::update_extraction_visual,
+                interaction::draw_selection_box,
+                items::update_dropped_items,
+                items::apply_item_collisions, // Add collision system after physics update
+                items::collect_items,
+                particles::update_particles,
+            )
+                .run_if(in_state(GameState::Playing)),
+        )
         .run();
 }
 

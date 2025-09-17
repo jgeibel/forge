@@ -5,10 +5,7 @@ pub struct InputPlugin;
 
 impl Plugin for InputPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, (
-            cursor_grab_system,
-            exit_system,
-        ));
+        app.add_systems(Update, (cursor_grab_system, exit_system));
     }
 }
 
@@ -20,7 +17,7 @@ fn cursor_grab_system(
     let Ok(mut window) = window_query.get_single_mut() else {
         return;
     };
-    
+
     if keyboard.just_pressed(KeyCode::Escape) {
         match window.cursor.grab_mode {
             CursorGrabMode::None => {
@@ -35,10 +32,7 @@ fn cursor_grab_system(
     }
 }
 
-fn exit_system(
-    keyboard: Res<ButtonInput<KeyCode>>,
-    mut exit: EventWriter<AppExit>,
-) {
+fn exit_system(keyboard: Res<ButtonInput<KeyCode>>, mut exit: EventWriter<AppExit>) {
     if keyboard.pressed(KeyCode::ControlLeft) && keyboard.just_pressed(KeyCode::KeyQ) {
         exit.send(AppExit::Success);
     }

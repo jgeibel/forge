@@ -5,45 +5,45 @@ pub struct CelestialData {
     pub name: String,
 
     // Orbital characteristics
-    pub orbital_radius: f64,           // Distance from sun in AU (Astronomical Units)
-    pub orbital_period: f64,           // Year length in Earth days
-    pub orbital_eccentricity: f32,     // How elliptical the orbit is (0 = circle, 1 = parabola)
-    pub orbital_inclination: f32,      // Tilt of orbit relative to ecliptic plane (degrees)
+    pub orbital_radius: f64, // Distance from sun in AU (Astronomical Units)
+    pub orbital_period: f64, // Year length in Earth days
+    pub orbital_eccentricity: f32, // How elliptical the orbit is (0 = circle, 1 = parabola)
+    pub orbital_inclination: f32, // Tilt of orbit relative to ecliptic plane (degrees)
 
     // Rotational characteristics
-    pub rotation_period: f64,          // Day length in Earth hours (24 = Earth-like)
-    pub axial_tilt: f32,              // Tilt of planet's axis (degrees, 23.5 = Earth-like)
-    pub rotation_direction: RotationDirection,  // Prograde or retrograde
+    pub rotation_period: f64, // Day length in Earth hours (24 = Earth-like)
+    pub axial_tilt: f32,      // Tilt of planet's axis (degrees, 23.5 = Earth-like)
+    pub rotation_direction: RotationDirection, // Prograde or retrograde
 
     // Physical characteristics
-    pub radius: f64,                   // Planet radius in km
-    pub mass: f64,                     // Planet mass in Earth masses
-    pub surface_gravity: f32,          // Surface gravity in g (1.0 = Earth)
-    pub escape_velocity: f32,          // km/s needed to escape gravity
+    pub radius: f64,          // Planet radius in km
+    pub mass: f64,            // Planet mass in Earth masses
+    pub surface_gravity: f32, // Surface gravity in g (1.0 = Earth)
+    pub escape_velocity: f32, // km/s needed to escape gravity
 
     // Atmospheric properties
     pub has_atmosphere: bool,
-    pub atmospheric_pressure: f32,     // Surface pressure in Earth atmospheres
+    pub atmospheric_pressure: f32, // Surface pressure in Earth atmospheres
     pub atmospheric_composition: AtmosphericComposition,
-    pub greenhouse_effect: f32,        // Temperature increase from atmosphere (K)
+    pub greenhouse_effect: f32, // Temperature increase from atmosphere (K)
 
     // Temperature and climate
-    pub base_temperature: f32,         // Average temperature at surface (Kelvin)
-    pub temperature_variance: f32,     // Day/night temperature difference
-    pub albedo: f32,                  // Reflectivity (0-1, affects temperature)
+    pub base_temperature: f32, // Average temperature at surface (Kelvin)
+    pub temperature_variance: f32, // Day/night temperature difference
+    pub albedo: f32,           // Reflectivity (0-1, affects temperature)
 
     // Magnetic field (affects auroras, radiation protection)
-    pub magnetic_field_strength: f32,  // Relative to Earth (1.0 = Earth-like)
+    pub magnetic_field_strength: f32, // Relative to Earth (1.0 = Earth-like)
 
     // Visual characteristics
-    pub sky_color: Color,              // Atmosphere scattering color
-    pub sunset_color: Color,           // Color during sunrise/sunset
-    pub star_visibility: f32,          // How visible stars are during day (0-1)
+    pub sky_color: Color,     // Atmosphere scattering color
+    pub sunset_color: Color,  // Color during sunrise/sunset
+    pub star_visibility: f32, // How visible stars are during day (0-1)
 
     // Gameplay-relevant derived values
-    pub solar_constant: f32,           // Solar energy at this distance (W/m²)
-    pub day_length_seconds: f32,       // In-game seconds for one day
-    pub year_length_days: f32,         // Number of planet days per year
+    pub solar_constant: f32,     // Solar energy at this distance (W/m²)
+    pub day_length_seconds: f32, // In-game seconds for one day
+    pub year_length_days: f32,   // Number of planet days per year
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -82,44 +82,44 @@ impl CelestialData {
             name,
 
             // Orbital characteristics
-            orbital_radius: 1.0,              // 1 AU from sun
-            orbital_period: 365.25,           // Earth year
-            orbital_eccentricity: 0.0167,     // Nearly circular
-            orbital_inclination: 0.0,         // Reference plane
+            orbital_radius: 1.0,          // 1 AU from sun
+            orbital_period: 365.25,       // Earth year
+            orbital_eccentricity: 0.0167, // Nearly circular
+            orbital_inclination: 0.0,     // Reference plane
 
             // Rotational characteristics
-            rotation_period: 24.0,            // 24 hour days
-            axial_tilt: 23.5,                // Earth's tilt (causes seasons)
+            rotation_period: 24.0, // 24 hour days
+            axial_tilt: 23.5,      // Earth's tilt (causes seasons)
             rotation_direction: RotationDirection::Prograde,
 
             // Physical characteristics
-            radius: 6371.0,                   // Earth radius in km
-            mass: 1.0,                        // 1 Earth mass
-            surface_gravity: 1.0,             // 1g
-            escape_velocity: 11.2,            // Earth's escape velocity
+            radius: 6371.0,        // Earth radius in km
+            mass: 1.0,             // 1 Earth mass
+            surface_gravity: 1.0,  // 1g
+            escape_velocity: 11.2, // Earth's escape velocity
 
             // Atmospheric properties
             has_atmosphere: true,
             atmospheric_pressure: 1.0,
             atmospheric_composition: AtmosphericComposition::default(),
-            greenhouse_effect: 33.0,          // Earth's greenhouse warming
+            greenhouse_effect: 33.0, // Earth's greenhouse warming
 
             // Temperature and climate
-            base_temperature: 288.0,          // 15°C average
-            temperature_variance: 20.0,       // Typical day/night difference
-            albedo: 0.3,                     // Earth's albedo
+            base_temperature: 288.0,    // 15°C average
+            temperature_variance: 20.0, // Typical day/night difference
+            albedo: 0.3,                // Earth's albedo
 
             // Magnetic field
             magnetic_field_strength: 1.0,
 
             // Visual characteristics
-            sky_color: Color::srgb(0.53, 0.81, 0.92),    // Sky blue
-            sunset_color: Color::srgb(1.0, 0.6, 0.3),     // Orange sunset
-            star_visibility: 0.0,             // No stars during day
+            sky_color: Color::srgb(0.53, 0.81, 0.92), // Sky blue
+            sunset_color: Color::srgb(1.0, 0.6, 0.3), // Orange sunset
+            star_visibility: 0.0,                     // No stars during day
 
             // Derived values
-            solar_constant: 1361.0,           // Solar energy at Earth's distance
-            day_length_seconds: 120.0,        // 2 minutes per day in-game
+            solar_constant: 1361.0,    // Solar energy at Earth's distance
+            day_length_seconds: 120.0, // 2 minutes per day in-game
             year_length_days: 365.25,
         }
     }
@@ -129,25 +129,25 @@ impl CelestialData {
             name,
 
             // Orbital characteristics
-            orbital_radius: 1.524,             // 1.5 AU from sun
-            orbital_period: 687.0,            // Mars year in Earth days
-            orbital_eccentricity: 0.0934,     // More eccentric than Earth
-            orbital_inclination: 1.85,        // Slight tilt
+            orbital_radius: 1.524,        // 1.5 AU from sun
+            orbital_period: 687.0,        // Mars year in Earth days
+            orbital_eccentricity: 0.0934, // More eccentric than Earth
+            orbital_inclination: 1.85,    // Slight tilt
 
             // Rotational characteristics
-            rotation_period: 24.6,            // Sol (Mars day)
-            axial_tilt: 25.19,               // Similar to Earth
+            rotation_period: 24.6, // Sol (Mars day)
+            axial_tilt: 25.19,     // Similar to Earth
             rotation_direction: RotationDirection::Prograde,
 
             // Physical characteristics
-            radius: 3389.5,                   // Mars radius
-            mass: 0.107,                      // ~11% Earth mass
-            surface_gravity: 0.38,            // 38% Earth gravity
+            radius: 3389.5,        // Mars radius
+            mass: 0.107,           // ~11% Earth mass
+            surface_gravity: 0.38, // 38% Earth gravity
             escape_velocity: 5.03,
 
             // Atmospheric properties
             has_atmosphere: true,
-            atmospheric_pressure: 0.006,      // Very thin
+            atmospheric_pressure: 0.006, // Very thin
             atmospheric_composition: AtmosphericComposition {
                 nitrogen: 0.027,
                 oxygen: 0.0013,
@@ -156,25 +156,25 @@ impl CelestialData {
                 methane: 0.0,
                 other: 0.0204,
             },
-            greenhouse_effect: 5.0,           // Minimal greenhouse effect
+            greenhouse_effect: 5.0, // Minimal greenhouse effect
 
             // Temperature and climate
-            base_temperature: 210.0,          // -63°C average
-            temperature_variance: 60.0,       // Large day/night difference
+            base_temperature: 210.0,    // -63°C average
+            temperature_variance: 60.0, // Large day/night difference
             albedo: 0.25,
 
             // Magnetic field
-            magnetic_field_strength: 0.0,     // No global magnetic field
+            magnetic_field_strength: 0.0, // No global magnetic field
 
             // Visual characteristics
-            sky_color: Color::srgb(0.9, 0.7, 0.5),       // Butterscotch
-            sunset_color: Color::srgb(0.4, 0.6, 0.8),     // Blue sunset (opposite of Earth!)
-            star_visibility: 0.1,             // Some stars visible during day
+            sky_color: Color::srgb(0.9, 0.7, 0.5), // Butterscotch
+            sunset_color: Color::srgb(0.4, 0.6, 0.8), // Blue sunset (opposite of Earth!)
+            star_visibility: 0.1,                  // Some stars visible during day
 
             // Derived values
-            solar_constant: 586.0,            // Less solar energy
-            day_length_seconds: 123.0,        // Slightly longer than Earth day
-            year_length_days: 668.6,          // Mars sols per Mars year
+            solar_constant: 586.0,     // Less solar energy
+            day_length_seconds: 123.0, // Slightly longer than Earth day
+            year_length_days: 668.6,   // Mars sols per Mars year
         }
     }
 
@@ -183,14 +183,14 @@ impl CelestialData {
             name,
 
             // Orbital characteristics
-            orbital_radius: 0.723,            // Closer to sun
+            orbital_radius: 0.723, // Closer to sun
             orbital_period: 224.7,
-            orbital_eccentricity: 0.0067,     // Very circular
+            orbital_eccentricity: 0.0067, // Very circular
             orbital_inclination: 3.39,
 
             // Rotational characteristics
-            rotation_period: 5832.5,          // 243 Earth days! (Very slow)
-            axial_tilt: 177.4,               // Upside down
+            rotation_period: 5832.5, // 243 Earth days! (Very slow)
+            axial_tilt: 177.4,       // Upside down
             rotation_direction: RotationDirection::Retrograde,
 
             // Physical characteristics
@@ -201,7 +201,7 @@ impl CelestialData {
 
             // Atmospheric properties
             has_atmosphere: true,
-            atmospheric_pressure: 92.0,       // Crushing pressure
+            atmospheric_pressure: 92.0, // Crushing pressure
             atmospheric_composition: AtmosphericComposition {
                 nitrogen: 0.035,
                 oxygen: 0.0,
@@ -210,25 +210,25 @@ impl CelestialData {
                 methane: 0.0,
                 other: 0.0,
             },
-            greenhouse_effect: 510.0,         // Extreme greenhouse effect
+            greenhouse_effect: 510.0, // Extreme greenhouse effect
 
             // Temperature and climate
-            base_temperature: 737.0,          // 464°C - hot enough to melt lead
-            temperature_variance: 5.0,        // Almost no variation
-            albedo: 0.75,                    // Very reflective clouds
+            base_temperature: 737.0,   // 464°C - hot enough to melt lead
+            temperature_variance: 5.0, // Almost no variation
+            albedo: 0.75,              // Very reflective clouds
 
             // Magnetic field
             magnetic_field_strength: 0.0,
 
             // Visual characteristics
-            sky_color: Color::srgb(0.9, 0.8, 0.5),       // Yellowish
+            sky_color: Color::srgb(0.9, 0.8, 0.5), // Yellowish
             sunset_color: Color::srgb(0.8, 0.6, 0.4),
-            star_visibility: 0.0,             // Too bright to see stars
+            star_visibility: 0.0, // Too bright to see stars
 
             // Derived values
-            solar_constant: 2601.0,           // Much more solar energy
-            day_length_seconds: 14562.5,     // Super long days (4 hours in-game)
-            year_length_days: 1.92,           // Less than 2 Venus days per year!
+            solar_constant: 2601.0,      // Much more solar energy
+            day_length_seconds: 14562.5, // Super long days (4 hours in-game)
+            year_length_days: 1.92,      // Less than 2 Venus days per year!
         }
     }
 

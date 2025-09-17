@@ -1,6 +1,6 @@
-use bevy::prelude::*;
 use crate::block::BlockType;
 use crate::loading::GameState;
+use bevy::prelude::*;
 
 pub mod hotbar;
 
@@ -10,13 +10,13 @@ pub struct InventoryPlugin;
 
 impl Plugin for InventoryPlugin {
     fn build(&self, app: &mut App) {
-        app
-            .init_resource::<Hotbar>()
+        app.init_resource::<Hotbar>()
             .add_systems(OnEnter(GameState::Playing), hotbar::setup_hotbar_ui)
-            .add_systems(Update, (
-                hotbar::hotbar_selection_system,
-                hotbar::update_hotbar_ui,
-            ).run_if(in_state(GameState::Playing)));
+            .add_systems(
+                Update,
+                (hotbar::hotbar_selection_system, hotbar::update_hotbar_ui)
+                    .run_if(in_state(GameState::Playing)),
+            );
     }
 }
 

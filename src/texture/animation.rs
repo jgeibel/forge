@@ -19,15 +19,15 @@ impl AnimatedTexture {
             timer: Timer::from_seconds(1.0 / ANIMATION_FPS, TimerMode::Repeating),
         }
     }
-    
+
     pub fn update(&mut self, delta: f32) {
         self.timer.tick(Duration::from_secs_f32(delta));
-        
+
         if self.timer.just_finished() {
             self.current_frame = (self.current_frame + 1) % self.frames.len();
         }
     }
-    
+
     pub fn current_frame_index(&self) -> usize {
         self.frames[self.current_frame]
     }
@@ -46,12 +46,9 @@ impl Default for AnimationManager {
     }
 }
 
-pub fn update_texture_animations(
-    time: Res<Time>,
-    mut manager: ResMut<AnimationManager>,
-) {
+pub fn update_texture_animations(time: Res<Time>, mut manager: ResMut<AnimationManager>) {
     let delta = time.delta_seconds();
-    
+
     for (_, animation) in manager.animations.iter_mut() {
         animation.update(delta);
     }

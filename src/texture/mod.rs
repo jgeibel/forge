@@ -1,6 +1,6 @@
-pub mod loader;
-pub mod atlas;
 pub mod animation;
+pub mod atlas;
+pub mod loader;
 pub mod test_textures;
 
 use bevy::prelude::*;
@@ -27,7 +27,7 @@ impl BlockFace {
             BlockFace::Right,
         ]
     }
-    
+
     pub fn sides() -> [BlockFace; 4] {
         [
             BlockFace::Front,
@@ -72,29 +72,32 @@ pub struct BlockTextureAtlas {
 impl BlockTextureAtlas {
     pub fn get_uv(&self, block_type: &str, face: BlockFace, state: BlockState) -> (Vec2, Vec2) {
         let key = (block_type.to_string(), face, state);
-        
+
         if let Some(info) = self.textures.get(&key) {
             return (info.uv_min, info.uv_max);
         }
-        
+
         // Fallback to normal state if specific state not found
         let fallback_key = (block_type.to_string(), face, BlockState::Normal);
         if let Some(info) = self.textures.get(&fallback_key) {
             return (info.uv_min, info.uv_max);
         }
-        
+
         // Return missing texture UV (purple)
-        (Vec2::ZERO, Vec2::new(32.0 / self.atlas_size.x, 32.0 / self.atlas_size.y))
+        (
+            Vec2::ZERO,
+            Vec2::new(32.0 / self.atlas_size.x, 32.0 / self.atlas_size.y),
+        )
     }
-    
+
     /// Get a representative texture path for UI display purposes
     /// Returns the most representative texture for a block type
     pub fn get_display_texture_path(block_type: &str) -> String {
         let base_path = format!("assets/textures/blocks/{}", block_type);
-        
+
         // Check actual file existence
         use std::path::Path;
-        
+
         // Try faces in order of preference for UI display
         let face_options = vec![
             "side",   // Side view is often most recognizable
@@ -103,7 +106,7 @@ impl BlockTextureAtlas {
             "front",  // Front face if available
             "bottom", // Last resort
         ];
-        
+
         for face_name in face_options {
             let file_path = format!("{}/{}.png", base_path, face_name);
             if Path::new(&file_path).exists() {
@@ -111,7 +114,7 @@ impl BlockTextureAtlas {
                 return format!("textures/blocks/{}/{}.png", block_type, face_name);
             }
         }
-        
+
         // Default fallback (assume all.png exists)
         format!("textures/blocks/{}/all.png", block_type)
     }
@@ -132,7 +135,7 @@ fn setup_textures(
 ) {
     // This will be implemented in loader.rs
     info!("Setting up texture system...");
-    
+
     // For now, create a placeholder atlas
     let atlas = loader::load_block_textures(&asset_server, &mut images);
     commands.insert_resource(atlas);
