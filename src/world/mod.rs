@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use image::{ImageBuffer, Rgba};
 use noise::{NoiseFn, Perlin};
+use rand::{rngs::StdRng, Rng, SeedableRng};
 use std::path::{Path, PathBuf};
 
 use crate::block::BlockType;
@@ -94,6 +95,9 @@ pub struct WorldGenConfig {
     pub continent_threshold: f32,
     pub continent_power: f32,
     pub continent_bias: f32,
+    pub continent_count: u32,
+    pub continent_radius: f32,
+    pub continent_edge_power: f32,
     pub continent_frequency: f64,
     pub detail_frequency: f64,
     pub detail_amplitude: f32,
@@ -115,9 +119,12 @@ impl Default for WorldGenConfig {
             sea_level: 64.0,
             ocean_depth: 24.0,
             deep_ocean_depth: 40.0,
-            continent_threshold: 0.25,
+            continent_threshold: 0.22,
             continent_power: 1.0,
-            continent_bias: 0.22,
+            continent_bias: 0.36,
+            continent_count: 6,
+            continent_radius: 0.24,
+            continent_edge_power: 1.2,
             continent_frequency: 0.6,
             detail_frequency: 7.0,
             detail_amplitude: 8.0,
@@ -138,22 +145,28 @@ impl WorldGenConfig {
         let planet_size = config.size_chunks as u32 * 32;
         let size_scale = planet_size.max(1) as f32 / 16384.0;
 
+        let base_continent_count = ((planet_size as f32) / 4096.0).clamp(3.0, 7.0).round() as u32;
+        let radius_scale = (planet_size as f32 / 16384.0).clamp(0.9, 1.45);
+
         Self {
             seed: config.seed,
             planet_size,
             sea_level: config.sea_level,
-            ocean_depth: 16.0 * size_scale.clamp(0.7, 1.3),
-            deep_ocean_depth: 24.0 * size_scale.clamp(0.8, 1.5),
-            continent_threshold: 0.2,
+            ocean_depth: 15.0 * size_scale.clamp(0.7, 1.2),
+            deep_ocean_depth: 22.0 * size_scale.clamp(0.8, 1.4),
+            continent_threshold: 0.18,
             continent_power: 0.95,
-            continent_bias: 0.25,
-            continent_frequency: 0.55,
-            detail_frequency: 7.5,
-            detail_amplitude: 15.0,
-            mountain_frequency: 2.0,
-            mountain_height: 80.0 * size_scale.clamp(0.8, 1.4),
-            mountain_threshold: 0.48,
-            moisture_frequency: 2.7,
+            continent_bias: 0.36,
+            continent_count: base_continent_count,
+            continent_radius: 0.23 * radius_scale,
+            continent_edge_power: 1.2,
+            continent_frequency: 0.46,
+            detail_frequency: 7.1,
+            detail_amplitude: 16.5,
+            mountain_frequency: 1.8,
+            mountain_height: 84.0 * size_scale.clamp(0.8, 1.4),
+            mountain_threshold: 0.45,
+            moisture_frequency: 2.6,
             equator_temp_c: 28.0,
             pole_temp_c: -30.0,
             lapse_rate_c_per_block: 0.008,
@@ -170,6 +183,7 @@ pub struct WorldGenerator {
     mountain_noise: Perlin,
     moisture_noise: Perlin,
     temperature_noise: Perlin,
+    continent_sites: Vec<Vec2>,
 }
 
 impl Default for WorldGenerator {
@@ -187,6 +201,8 @@ impl WorldGenerator {
         let moisture_noise = Perlin::new(seed.wrapping_add(3));
         let temperature_noise = Perlin::new(seed.wrapping_add(4));
 
+        let continent_sites = generate_continent_sites(config.seed, config.continent_count.max(1));
+
         Self {
             config,
             continent_noise,
@@ -194,6 +210,7 @@ impl WorldGenerator {
             mountain_noise,
             moisture_noise,
             temperature_noise,
+            continent_sites,
         }
     }
 
@@ -215,11 +232,14 @@ impl WorldGenerator {
         );
 
         let continent_mask = ((continent + 1.0) * 0.5).powf(self.config.continent_power as f64);
-        let land_factor = ((continent_mask as f32)
+        let mut land_factor = ((continent_mask as f32)
             - (self.config.continent_threshold - self.config.continent_bias))
             .max(0.0)
             / (1.0 - self.config.continent_threshold);
-        let land_factor = land_factor.clamp(0.0, 1.0);
+        land_factor = land_factor.clamp(0.0, 1.0);
+
+        let site_mask = self.continent_site_mask(u as f32, v as f32);
+        land_factor = (land_factor * site_mask).clamp(0.0, 1.0);
 
         let ocean_factor = 1.0 - land_factor;
         let sea_level = self.config.sea_level;
@@ -518,6 +538,34 @@ impl WorldGenerator {
         }
     }
 
+    fn continent_site_mask(&self, u: f32, v: f32) -> f32 {
+        if self.continent_sites.is_empty() {
+            return 1.0;
+        }
+
+        let radius = self.config.continent_radius.max(0.01);
+        let radius_sq = radius * radius;
+        let edge_power = self.config.continent_edge_power.max(0.1);
+        let mut best = 0.0_f32;
+
+        for site in &self.continent_sites {
+            let du = torus_distance(u, site.x);
+            let dv = torus_distance(v, site.y);
+            let dist_sq = du * du + dv * dv;
+
+            if dist_sq <= radius_sq {
+                let influence = 1.0 - (dist_sq / radius_sq);
+                best = best.max(influence);
+            }
+        }
+
+        if best == 0.0 {
+            0.0
+        } else {
+            best.powf(edge_power)
+        }
+    }
+
     fn preview_color(&self, biome: Biome, height: f32) -> [u8; 4] {
         let sea_level = self.config.sea_level;
         let water_depth = (sea_level - height).max(0.0);
@@ -641,4 +689,48 @@ fn lerp_color(a: [u8; 3], b: [u8; 3], t: f32) -> [u8; 3] {
         lerp_f32(a[1] as f32, b[1] as f32, t) as u8,
         lerp_f32(a[2] as f32, b[2] as f32, t) as u8,
     ]
+}
+
+fn generate_continent_sites(seed: u64, count: u32) -> Vec<Vec2> {
+    let mut rng = StdRng::seed_from_u64(seed);
+    let n = count.max(1);
+    let grid_len = (n as f32).sqrt().ceil() as u32;
+    let cell_size = 1.0 / grid_len as f32;
+    let jitter = cell_size * 0.6;
+
+    let mut sites = Vec::with_capacity(n as usize);
+    let mut index = 0u32;
+
+    let offset_u = rng.gen::<f32>() * cell_size;
+    let offset_v = rng.gen::<f32>() * cell_size;
+
+    for row in 0..grid_len {
+        for col in 0..grid_len {
+            if index >= n {
+                break;
+            }
+            index += 1;
+            let base_u = (col as f32 + offset_u).rem_euclid(grid_len as f32) * cell_size;
+            let base_v = (row as f32 + offset_v).rem_euclid(grid_len as f32) * cell_size;
+            let jitter_u = (rng.gen::<f32>() - 0.5) * jitter;
+            let jitter_v = (rng.gen::<f32>() - 0.5) * jitter;
+            let u = (base_u + jitter_u).rem_euclid(1.0);
+            let v = (base_v + jitter_v).rem_euclid(1.0);
+            sites.push(Vec2::new(u, v));
+        }
+        if index >= n {
+            break;
+        }
+    }
+
+    sites
+}
+
+fn torus_distance(a: f32, b: f32) -> f32 {
+    let diff = (a - b).abs().fract();
+    if diff > 0.5 {
+        1.0 - diff
+    } else {
+        diff
+    }
 }
