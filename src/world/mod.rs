@@ -2,6 +2,7 @@ use bevy::prelude::*;
 use image::{ImageBuffer, Rgba};
 use noise::{NoiseFn, Perlin};
 use rand::{rngs::StdRng, Rng, SeedableRng};
+use std::f32::consts::TAU;
 use std::path::{Path, PathBuf};
 
 use crate::block::BlockType;
@@ -109,6 +110,7 @@ pub struct WorldGenConfig {
     pub pole_temp_c: f32,
     pub lapse_rate_c_per_block: f32,
     pub temperature_variation: f32,
+    pub highland_bonus: f32,
 }
 
 impl Default for WorldGenConfig {
@@ -121,21 +123,22 @@ impl Default for WorldGenConfig {
             deep_ocean_depth: 40.0,
             continent_threshold: 0.22,
             continent_power: 1.0,
-            continent_bias: 0.36,
+            continent_bias: 0.34,
             continent_count: 6,
             continent_radius: 0.24,
             continent_edge_power: 1.2,
             continent_frequency: 0.6,
             detail_frequency: 7.0,
             detail_amplitude: 8.0,
-            mountain_frequency: 2.8,
-            mountain_height: 52.0,
-            mountain_threshold: 0.5,
+            mountain_frequency: 2.5,
+            mountain_height: 64.0,
+            mountain_threshold: 0.48,
             moisture_frequency: 2.6,
             equator_temp_c: 30.0,
             pole_temp_c: -25.0,
             lapse_rate_c_per_block: 0.008,
             temperature_variation: 3.0,
+            highland_bonus: 14.0,
         }
     }
 }
@@ -156,21 +159,22 @@ impl WorldGenConfig {
             deep_ocean_depth: 22.0 * size_scale.clamp(0.8, 1.4),
             continent_threshold: 0.18,
             continent_power: 0.95,
-            continent_bias: 0.36,
+            continent_bias: 0.34,
             continent_count: base_continent_count,
             continent_radius: 0.23 * radius_scale,
             continent_edge_power: 1.2,
-            continent_frequency: 0.46,
+            continent_frequency: 0.45,
             detail_frequency: 7.1,
-            detail_amplitude: 16.5,
+            detail_amplitude: 16.0,
             mountain_frequency: 1.8,
-            mountain_height: 84.0 * size_scale.clamp(0.8, 1.4),
-            mountain_threshold: 0.45,
+            mountain_height: 78.0 * size_scale.clamp(0.8, 1.4),
+            mountain_threshold: 0.42,
             moisture_frequency: 2.6,
             equator_temp_c: 28.0,
             pole_temp_c: -30.0,
             lapse_rate_c_per_block: 0.008,
             temperature_variation: 3.0,
+            highland_bonus: 20.0,
         }
     }
 }
@@ -183,7 +187,13 @@ pub struct WorldGenerator {
     mountain_noise: Perlin,
     moisture_noise: Perlin,
     temperature_noise: Perlin,
-    continent_sites: Vec<Vec2>,
+    continent_sites: Vec<ContinentSite>,
+}
+
+#[derive(Clone)]
+struct ContinentSite {
+    position: Vec2,
+    ridge_angle: f32,
 }
 
 impl Default for WorldGenerator {
@@ -280,9 +290,17 @@ impl WorldGenerator {
         } else {
             0.0
         };
-        let mountains = mountain_bonus.clamp(0.0, 1.0) * self.config.mountain_height * land_factor;
+        let ridge_factor = self.continent_ridge_factor(u as f32, v as f32);
+        let mountains = (mountain_bonus * ridge_factor + land_factor * 0.1).clamp(0.0, 1.0)
+            * self.config.mountain_height
+            * land_factor;
 
-        let land_height = sea_level + detail + mountains + land_factor * 18.0;
+        let interior_mask = land_factor.powf(1.4);
+        let highlands = (ridge_factor * 0.9 + interior_mask * 0.4).clamp(0.0, 1.0)
+            * self.config.highland_bonus
+            * interior_mask;
+
+        let land_height = sea_level + detail + highlands + mountains + land_factor * 16.0;
         let height = ocean_height * ocean_factor + land_height * land_factor;
 
         height.max(4.0)
@@ -355,7 +373,11 @@ impl WorldGenerator {
             if height_value >= self.config.sea_level {
                 land_pixels += 1;
             }
-            if height_value >= self.config.sea_level + self.config.mountain_height * 0.6 {
+            if height_value
+                >= self.config.sea_level
+                    + self.config.highland_bonus * 0.45
+                    + self.config.mountain_height * 0.22
+            {
                 mountain_pixels += 1;
             }
         }
@@ -483,7 +505,9 @@ impl WorldGenerator {
 
         let elevation = height - sea_level;
 
-        if elevation > self.config.mountain_height * 0.8 {
+        let mountain_limit = self.config.highland_bonus * 0.6 + self.config.mountain_height * 0.35;
+
+        if elevation > mountain_limit {
             return if temp_c < -5.0 {
                 Biome::SnowyMountain
             } else {
@@ -549,8 +573,8 @@ impl WorldGenerator {
         let mut best = 0.0_f32;
 
         for site in &self.continent_sites {
-            let du = torus_distance(u, site.x);
-            let dv = torus_distance(v, site.y);
+            let du = torus_distance(u, site.position.x);
+            let dv = torus_distance(v, site.position.y);
             let dist_sq = du * du + dv * dv;
 
             if dist_sq <= radius_sq {
@@ -564,6 +588,37 @@ impl WorldGenerator {
         } else {
             best.powf(edge_power)
         }
+    }
+
+    fn continent_ridge_factor(&self, u: f32, v: f32) -> f32 {
+        if self.continent_sites.is_empty() {
+            return 1.0;
+        }
+
+        let radius = self.config.continent_radius.max(0.01);
+        let ridge_width = (radius * 0.3).max(0.02);
+        let mut strongest = 0.0_f32;
+
+        for site in &self.continent_sites {
+            let du = torus_distance(u, site.position.x);
+            let dv = torus_distance(v, site.position.y);
+
+            let dist_sq = du * du + dv * dv;
+            if dist_sq > radius * radius {
+                continue;
+            }
+
+            let cos_a = site.ridge_angle.cos();
+            let sin_a = site.ridge_angle.sin();
+            let along = du * cos_a + dv * sin_a;
+            let across = -du * sin_a + dv * cos_a;
+
+            let longitudinal = (1.0 - (along.abs() / radius)).max(0.0);
+            let transverse = (1.0 - (across.abs() / ridge_width)).max(0.0);
+            strongest = strongest.max(longitudinal * transverse);
+        }
+
+        strongest.clamp(0.0, 1.0)
     }
 
     fn preview_color(&self, biome: Biome, height: f32) -> [u8; 4] {
@@ -691,7 +746,7 @@ fn lerp_color(a: [u8; 3], b: [u8; 3], t: f32) -> [u8; 3] {
     ]
 }
 
-fn generate_continent_sites(seed: u64, count: u32) -> Vec<Vec2> {
+fn generate_continent_sites(seed: u64, count: u32) -> Vec<ContinentSite> {
     let mut rng = StdRng::seed_from_u64(seed);
     let n = count.max(1);
     let grid_len = (n as f32).sqrt().ceil() as u32;
@@ -716,7 +771,11 @@ fn generate_continent_sites(seed: u64, count: u32) -> Vec<Vec2> {
             let jitter_v = (rng.gen::<f32>() - 0.5) * jitter;
             let u = (base_u + jitter_u).rem_euclid(1.0);
             let v = (base_v + jitter_v).rem_euclid(1.0);
-            sites.push(Vec2::new(u, v));
+            let angle = rng.gen::<f32>() * TAU;
+            sites.push(ContinentSite {
+                position: Vec2::new(u, v),
+                ridge_angle: angle,
+            });
         }
         if index >= n {
             break;
