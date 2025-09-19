@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 
 // Planet size presets (in chunks)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PlanetSize {
     Tiny,        // 2048x2048 blocks (64x64 chunks)
     Small,       // 4096x4096 blocks (128x128 chunks)

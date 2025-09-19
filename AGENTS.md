@@ -1,19 +1,22 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-Game logic lives in `src/`, with domain-focused modules such as `planet/`, `world/`, `chunk/`, and `inventory/` for terrain, world state, and player systems. Rendering helpers sit under `render/`, UI flows under `ui/`, and reusable tools in `tools.rs`. Runtime assets (textures, meshes, audio) reside in `assets/`; keep large test data out of Git and note the helper scripts `create_temp_textures.py` and `resize_textures.sh` for placeholder or resized textures. Architectural notes and long-form plans are in `docs/`, while `bevy_console_chat/` contains the bespoke in-game console plugin currently disabled in `Cargo.toml`.
+Game logic lives in `src/` with domain modules such as `planet/`, `world/`, `chunk/`, and `inventory/` handling terrain simulation, world state, and player systems. Rendering helpers reside under `src/render/`, UI flows sit in `src/ui/`, and shared utilities collect in `src/tools.rs`. Runtime assets (textures, meshes, audio) stay in `assets/`. Long-form plans and architecture notes live in `docs/`, while `bevy_console_chat/` hosts the optional in-game console plugin disabled in `Cargo.toml`. Keep generated assets out of Git; use helper scripts like `assets/create_temp_textures.py` when prototyping.
 
 ## Build, Test, and Development Commands
-Use `cargo build` for a release-quality check and `cargo run` (default target `forge`) for the desktop client. `cargo test` runs the existing unit coverage; add `-- --nocapture` when debugging output-heavy tests. For rapid iteration, install `cargo-watch` and launch `./run-hot.sh`, which rebuilds on changes to `src/`. Format the workspace with `cargo fmt` and lint before reviews with `cargo clippy --all-targets --all-features`.
+Run `cargo build` for a release-quality compile check, and `cargo run` (default target `forge`) to launch the desktop client. Hot-reload changes with `./run-hot.sh` once `cargo-watch` is installed. Use `cargo fmt` to format before committing and `cargo clippy --all-targets --all-features` to catch lint violations. Prefer `cargo test -- --nocapture` when you need verbose output.
 
 ## Coding Style & Naming Conventions
-Follow standard Rust style: four-space indentation, `snake_case` for modules/files, `CamelCase` for types, and `SCREAMING_SNAKE_CASE` for constants. Keep systems lightweight and focused; prefer splitting large stages into dedicated modules (e.g., `loading.rs` for asset preloads). Commit formatted code (`cargo fmt`) and address clippy warnings before opening a PR.
+Follow Rust defaults: four-space indentation, `snake_case` for files and functions, `CamelCase` for types, and `SCREAMING_SNAKE_CASE` for constants. Keep systems focused; break large stages into modules such as `loading.rs` for asset preloads. Document new tooling in `docs/ARCHITECTURE.md` so teammates can reproduce your setup.
 
 ## Testing Guidelines
-Unit tests belong either in `#[cfg(test)] mod tests` blocks next to the code or under a future `tests/` directory for integration coverage. Name tests after the behavior under check (`handles_chunk_edge_cases`). Leverage Bevy's headless mode where possible and gate longer-running terrain generation tests with `#[ignore]`. Aim to cover both simulation logic (`planet/`, `world/`) and data loaders (`loading.rs`).
+Write unit tests inline using `#[cfg(test)]` modules or move integration coverage under `tests/` as it grows. Name tests after the behavior under check, e.g., `handles_chunk_edge_cases`. Leverage Bevy headless mode for simulation-heavy coverage, and gate long terrain generation tests with `#[ignore]`. Run `cargo test` before opening a PR.
 
 ## Commit & Pull Request Guidelines
-Recent history favors short imperative commits (`Add command prompt`, `Fix day/night cycle`); keep following that style and scope a commit per logical change. Pull requests should summarize gameplay impact, list testing commands (`cargo run`, `cargo test`), link any tracked issue, and attach screenshots or clips when you touch rendering, UI, or new assets. Coordinate breaking engine changes in `docs/ROADMAP.md` before merging.
+Use short, imperative commit messages like `Add command prompt` or `Fix day/night cycle`. PRs should summarize gameplay impact, list commands executed (`cargo run`, `cargo test`), reference any tracked issues, and attach screenshots or clips when touching rendering or UI. Coordinate breaking engine changes in `docs/ROADMAP.md` before merge.
 
-## Assets & Tooling Notes
-Version only source textures and procedural rules; generated intermediates should go to `target/` or a temporary folder. Use the provided shell/python helpers for asset prep, and document any new external dependencies in `docs/ARCHITECTURE.md` so other contributors can reproduce your setup.
+## World Builder Tool
+Spin up the standalone world builder with `cargo run --bin world_builder`. The app opens a map window plus a tabbed control panel for tuning `WorldGenConfig` (terrain, islands, and hydrology), cycling planet sizes, and re-generating previews. Click the map to inspect biome, height, water level, and other stats for a location, and use “Save as Defaults” to persist the current configuration to `docs/world_builder_defaults.json`.
+
+## Security & Configuration Tips
+Restrict large temporary assets to `target/` or scratch directories. Note any external dependencies, environment variables, or engine tweaks in `docs/ARCHITECTURE.md` so other contributors stay in sync.

@@ -61,6 +61,17 @@ Forge is a voxel-based MMO that combines Minecraft-style gameplay with a univers
   - Compute shaders for lighting/AO
   - LOD system with distance-based detail
 
+### Terrain & Hydrology
+- Terrain height comes from layered Perlin noise (continents, detail, mountains) with optional island masks.
+- Hydrology uses a configurable flow-accumulation map that carves river beds, fills lakes, and feeds both chunk generation and map previews.
+- Parameters (rainfall, flow thresholds, depth scaling, etc.) are surfaced in the world-builder UI for rapid iteration.
+- Rainfall variance/frequency sliders plus major-river boost controls sculpt regional wet/dry belts and spawn a handful of signature rivers.
+
+### Data Serialization
+**Serde + serde_json**
+- **Why**: Lightweight, battle-tested serialization for Rust structs
+- **Usage**: Persisting world-generation presets (e.g., `docs/world_builder_defaults.json`) and other configuration snapshots used by tooling
+
 ### Networking
 **QUIC Protocol (quinn-rs)**
 - **Why**: Better than TCP for games, handles packet loss gracefully, built-in encryption
