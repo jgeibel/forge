@@ -2,9 +2,12 @@ use std::fs;
 use std::path::Path;
 
 use bevy::prelude::*;
-use bevy::render::camera::{RenderTarget, ScalingMode};
+use bevy::input::mouse::{MouseMotion, MouseWheel};
+use bevy::input::ButtonInput;
+use bevy::render::camera::RenderTarget;
 use bevy::render::render_asset::RenderAssetUsages;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+use bevy::render::view::RenderLayers;
 use bevy::render::texture::ImageSampler;
 use bevy::ui::{Display, TargetCamera};
 use bevy::window::{PresentMode, PrimaryWindow, WindowRef, WindowResolution};
@@ -12,10 +15,8 @@ use bevy::window::{PresentMode, PrimaryWindow, WindowRef, WindowResolution};
 use forge::planet::{PlanetConfig, PlanetSize};
 use forge::world::{Biome, WorldGenConfig, WorldGenerator};
 
-const MAP_WIDTH: u32 = 1024;
-const MAP_HEIGHT: u32 = 512;
-const DETAIL_SIZE: u32 = 192;
-const DETAIL_WORLD_SPAN: f32 = 2048.0;
+const MAP_WIDTH: u32 = 512;  // Lower initial resolution for faster rendering
+const MAP_HEIGHT: u32 = 256;  // Lower initial resolution for faster rendering
 const DEFAULTS_PATH: &str = "docs/world_builder_defaults.json";
 
 fn main() {
@@ -23,7 +24,7 @@ fn main() {
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "World Builder - Map".into(),
-                resolution: WindowResolution::new(MAP_WIDTH as f32, MAP_HEIGHT as f32),
+                resolution: WindowResolution::new(1024.0, 512.0),  // 2x the map resolution for comfortable viewing
                 present_mode: PresentMode::AutoVsync,
                 resizable: true,
                 ..default()
@@ -31,6 +32,7 @@ fn main() {
             ..default()
         }))
         .init_resource::<ButtonMaterials>()
+        .init_resource::<DetailWindow>()
         .add_event::<RegenerateRequested>()
         .add_systems(Startup, setup)
         .add_systems(
@@ -46,13 +48,16 @@ fn main() {
                 update_tab_sections,
                 handle_regenerate_button,
                 handle_save_defaults_button,
+                handle_map_zoom,
+                handle_map_pan,
                 handle_map_click,
                 handle_scroll_events,
                 update_value_text,
                 update_selection_text,
                 apply_selection_marker,
                 redraw_map_when_needed,
-                update_detail_texture,
+                update_detail_view,
+                update_location_popup,
             ),
         )
         .run();
@@ -92,6 +97,16 @@ struct WorldBuilderState {
     active_tab: ParameterTab,
     repaint_requested: bool,
     selection: Option<SelectionDetail>,
+    // Camera controls for the map
+    camera_zoom: f32,
+    camera_translation: Vec2,
+    is_panning: bool,
+    last_mouse_position: Option<Vec2>,
+    // Popup state
+    show_popup: bool,
+    popup_world_pos: Option<(f32, f32)>,
+    // Detail inspection
+    detail_center: Option<Vec2>,  // Center of the detail view in world coordinates
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -216,6 +231,12 @@ struct WorldSizeLabel;
 struct SelectionSummaryText;
 
 #[derive(Component)]
+struct LocationPopup;
+
+#[derive(Component)]
+struct LocationPopupText;
+
+#[derive(Component)]
 struct ParameterValueText {
     field: ParameterField,
 }
@@ -233,6 +254,38 @@ struct TabButton {
 #[derive(Component)]
 struct TabSection {
     tab: ParameterTab,
+}
+
+#[derive(Component)]
+struct DetailZoomInButton;
+
+#[derive(Component)]
+struct DetailZoomOutButton;
+
+#[derive(Component)]
+struct DetailZoomLabel;
+
+#[derive(Component)]
+struct MapDisplay;
+
+#[derive(Component)]
+struct MapSprite;
+
+#[derive(Component)]
+struct DetailWindowCamera;
+
+#[derive(Component)]
+struct MapCamera;
+
+#[derive(Component)]
+struct InspectionMarker;
+
+#[derive(Resource, Default)]
+struct DetailWindow {
+    entity: Option<Entity>,
+    camera: Option<Entity>,
+    last_center: Option<Vec2>,
+    marker_entity: Option<Entity>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -313,7 +366,7 @@ impl ParameterField {
                 config.continent_threshold = threshold;
             }
             ParameterField::MountainHeight => {
-                config.mountain_height = (config.mountain_height + delta).clamp(8.0, 256.0);
+                config.mountain_height = (config.mountain_height + delta).clamp(50.0, 500.0);
             }
             ParameterField::MoistureFrequency => {
                 let freq = (config.moisture_frequency + delta as f64).clamp(0.1, 6.0);
@@ -324,7 +377,7 @@ impl ParameterField {
                     (config.temperature_variation + delta).clamp(0.0, 20.0);
             }
             ParameterField::HighlandBonus => {
-                config.highland_bonus = (config.highland_bonus + delta).clamp(0.0, 200.0);
+                config.highland_bonus = (config.highland_bonus + delta).clamp(0.0, 50.0);
             }
             ParameterField::IslandFrequency => {
                 let freq = (config.island_frequency + delta as f64).clamp(0.1, 8.0);
@@ -334,7 +387,7 @@ impl ParameterField {
                 config.island_threshold = (config.island_threshold + delta).clamp(0.0, 0.99);
             }
             ParameterField::IslandHeight => {
-                config.island_height = (config.island_height + delta).clamp(0.0, 128.0);
+                config.island_height = (config.island_height + delta).clamp(0.0, 50.0);
             }
             ParameterField::IslandFalloff => {
                 config.island_falloff = (config.island_falloff + delta).clamp(0.1, 6.0);
@@ -373,7 +426,7 @@ impl ParameterField {
                     (config.river_depth_scale + delta).clamp(0.0, 1.0);
             }
             ParameterField::RiverMaxDepth => {
-                config.river_max_depth = (config.river_max_depth + delta).clamp(0.0, 128.0);
+                config.river_max_depth = (config.river_max_depth + delta).clamp(0.0, 30.0);
             }
             ParameterField::RiverSurfaceRatio => {
                 config.river_surface_ratio =
@@ -384,10 +437,10 @@ impl ParameterField {
                     (config.lake_flow_threshold + delta).clamp(10.0, 5000.0);
             }
             ParameterField::LakeDepth => {
-                config.lake_depth = (config.lake_depth + delta).clamp(0.0, 64.0);
+                config.lake_depth = (config.lake_depth + delta).clamp(0.0, 30.0);
             }
             ParameterField::LakeShoreBlend => {
-                config.lake_shore_blend = (config.lake_shore_blend + delta).clamp(0.0, 16.0);
+                config.lake_shore_blend = (config.lake_shore_blend + delta).clamp(0.0, 10.0);
             }
         }
     }
@@ -490,17 +543,17 @@ impl ParameterField {
 
     fn description(&self) -> &'static str {
         match self {
-            ParameterField::SeaLevel => "Absolute waterline height; raising it floods low terrain.",
+            ParameterField::SeaLevel => "Sea level height in blocks (meters); ocean surface elevation.",
             ParameterField::ContinentCount => "Target number of large landmasses; higher values split the noise into more continents.",
             ParameterField::ContinentFrequency => "Low-frequency noise controlling continent placement; higher values create more variation per unit area.",
             ParameterField::ContinentThreshold => "Cutoff for land vs ocean; lower thresholds produce more land and wider continents.",
-            ParameterField::MountainHeight => "Maximum elevation added by the mountain mask for continental interiors.",
+            ParameterField::MountainHeight => "Peak height above terrain in blocks (meters); realistic mountain elevation.",
             ParameterField::MoistureFrequency => "Frequency of the moisture noise used for biomes; higher values add more variation.",
             ParameterField::TemperatureVariation => "Amplitude of the temperature noise layered over the latitude gradient.",
-            ParameterField::HighlandBonus => "Broad plateau boost applied to interior land before mountain peaks.",
+            ParameterField::HighlandBonus => "Plateau elevation in blocks (meters); raises continental interiors.",
             ParameterField::IslandFrequency => "Noise frequency used for standalone islands; higher values create more island opportunities.",
             ParameterField::IslandThreshold => "Mask threshold islands must exceed to appear; lower values yield more islands.",
-            ParameterField::IslandHeight => "Maximum extra elevation granted to qualifying islands above the ocean floor.",
+            ParameterField::IslandHeight => "Island peak height in blocks (meters) above ocean floor.",
             ParameterField::IslandFalloff => "Exponent controlling how quickly island influence fades away from land; higher values confine islands to deep ocean.",
             ParameterField::HydrologyResolution => "Grid resolution for the water flow simulation; higher values capture finer drainage details at the cost of generation time.",
             ParameterField::HydrologyRainfall => "Amount of water injected per hydrology cell; higher values strengthen flow everywhere.",
@@ -510,27 +563,27 @@ impl ParameterField {
             ParameterField::HydrologyMajorRiverBoost => "Additional rainfall injected into major river basins, controlling how dominant the large rivers become.",
             ParameterField::RiverFlowThreshold => "Flow accumulation required before a channel becomes a river.",
             ParameterField::RiverDepthScale => "Depth carved per unit flow; increase to dig deeper channels once rivers form.",
-            ParameterField::RiverMaxDepth => "Upper bound on river carving depth to keep valleys from over-eroding.",
+            ParameterField::RiverMaxDepth => "Maximum river depth in blocks (meters); prevents unrealistic canyons.",
             ParameterField::RiverSurfaceRatio => "Fraction of carved depth used to raise water surface above the river bed.",
             ParameterField::LakeFlowThreshold => "Accumulation needed for sinks/springs to become lakes instead of rivers.",
-            ParameterField::LakeDepth => "Maximum depth of lake basins carved at sinks.",
-            ParameterField::LakeShoreBlend => "Height band used to soften lake shorelines and avoid sheer cliffs.",
+            ParameterField::LakeDepth => "Lake depth in blocks (meters); typical natural lake depths.",
+            ParameterField::LakeShoreBlend => "Shore transition width in blocks (meters) for gradual slopes.",
         }
     }
 
     fn range_hint(&self) -> &'static str {
         match self {
-            ParameterField::SeaLevel => "16 - 200 blocks",
+            ParameterField::SeaLevel => "16 - 200 blocks (meters)",
             ParameterField::ContinentCount => "1 - 24",
             ParameterField::ContinentFrequency => "0.1 - 4.0",
             ParameterField::ContinentThreshold => "0.05 - 0.60",
-            ParameterField::MountainHeight => "8 - 256 blocks",
+            ParameterField::MountainHeight => "50 - 500 blocks (meters)",
             ParameterField::MoistureFrequency => "0.1 - 6.0",
             ParameterField::TemperatureVariation => "0 - 20",
-            ParameterField::HighlandBonus => "0 - 200 blocks",
+            ParameterField::HighlandBonus => "0 - 50 blocks (meters)",
             ParameterField::IslandFrequency => "0.1 - 8.0",
             ParameterField::IslandThreshold => "0.00 - 0.99",
-            ParameterField::IslandHeight => "0 - 128 blocks",
+            ParameterField::IslandHeight => "0 - 50 blocks (meters)",
             ParameterField::IslandFalloff => "0.1 - 6.0",
             ParameterField::HydrologyResolution => "128 - 4096 cells",
             ParameterField::HydrologyRainfall => "0.1 - 10.0",
@@ -540,11 +593,11 @@ impl ParameterField {
             ParameterField::HydrologyMajorRiverBoost => "0.0 - 10.0",
             ParameterField::RiverFlowThreshold => "10 - 5000",
             ParameterField::RiverDepthScale => "0.0 - 1.0",
-            ParameterField::RiverMaxDepth => "0 - 128 blocks",
+            ParameterField::RiverMaxDepth => "0 - 30 blocks (meters)",
             ParameterField::RiverSurfaceRatio => "0.1 - 1.0",
             ParameterField::LakeFlowThreshold => "10 - 5000",
-            ParameterField::LakeDepth => "0 - 64 blocks",
-            ParameterField::LakeShoreBlend => "0 - 16 blocks",
+            ParameterField::LakeDepth => "0 - 30 blocks (meters)",
+            ParameterField::LakeShoreBlend => "0 - 10 blocks (meters)",
         }
     }
 }
@@ -587,6 +640,7 @@ fn setup(
     mut commands: Commands,
     mut images: ResMut<Assets<Image>>,
     materials: Res<ButtonMaterials>,
+    _asset_server: Res<AssetServer>,
 ) {
     let planet_sizes = vec![
         PlanetSize::Tiny,
@@ -610,6 +664,8 @@ fn setup(
 
     let planet_size_index = find_closest_size_index(&planet_sizes, working.planet_size as i32);
 
+    let planet_size = active.planet_size as f32;
+
     commands.insert_resource(WorldBuilderState {
         working,
         active,
@@ -620,6 +676,13 @@ fn setup(
         active_tab: ParameterTab::Terrain,
         repaint_requested: true,
         selection: None,
+        camera_zoom: 2.0,  // Start zoomed in to fill the window
+        camera_translation: Vec2::ZERO,
+        is_panning: false,
+        last_mouse_position: None,
+        show_popup: false,
+        popup_world_pos: None,
+        detail_center: None,
     });
 
     // Map texture and sprite
@@ -632,85 +695,150 @@ fn setup(
         TextureDimension::D2,
         &[0u8, 0u8, 0u8, 255u8],
         TextureFormat::Rgba8UnormSrgb,
-        RenderAssetUsages::default(),
+        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
     );
     map_image.sampler = ImageSampler::nearest();
     let map_handle = images.add(map_image);
 
-    let mut detail_image = Image::new_fill(
-        Extent3d {
-            width: DETAIL_SIZE,
-            height: DETAIL_SIZE,
-            depth_or_array_layers: 1,
-        },
-        TextureDimension::D2,
-        &[0u8, 0u8, 0u8, 255u8],
-        TextureFormat::Rgba8UnormSrgb,
-        RenderAssetUsages::default(),
-    );
-    detail_image.sampler = ImageSampler::nearest();
-    let detail_handle = images.add(detail_image);
-
     commands.insert_resource(MapTextures {
         map: map_handle.clone(),
-        detail: detail_handle.clone(),
+        detail: map_handle.clone(),  // Not used anymore but kept for compatibility
     });
 
-    // Cameras and map entities
-    commands.spawn(Camera2dBundle {
+    // Camera for the map (world space) - only spawn if targeting main window
+    let mut camera_bundle = Camera2dBundle {
         camera: Camera {
             clear_color: ClearColorConfig::Custom(Color::srgb(0.02, 0.02, 0.03)),
-            ..default()
-        },
-        projection: OrthographicProjection {
-            scaling_mode: ScalingMode::AutoMin {
-                min_width: MAP_WIDTH as f32,
-                min_height: MAP_HEIGHT as f32,
-            },
+            order: 0,  // Main camera
             ..default()
         },
         ..default()
-    });
+    };
+    camera_bundle.projection.scale = 0.5;  // Start zoomed in to fill window
 
-    commands
-        .spawn(NodeBundle {
-            style: Style {
-                width: Val::Percent(100.0),
-                height: Val::Percent(100.0),
-                position_type: PositionType::Absolute,
-                left: Val::Px(0.0),
-                top: Val::Px(0.0),
+    commands.spawn((
+        camera_bundle,
+        MapCamera,
+        RenderLayers::default(), // Main camera sees default layer 0
+    ));
+
+    // Map sprite in world space
+    commands.spawn((
+        SpriteBundle {
+            texture: map_handle.clone(),
+            ..default()
+        },
+        MapSprite,
+    ));
+
+    // Selection marker in world space
+    commands.spawn((
+        SpriteBundle {
+            sprite: Sprite {
+                custom_size: Some(Vec2::new(12.0, 12.0)),
+                color: Color::srgb(1.0, 0.3, 0.2),
                 ..default()
             },
-            background_color: BackgroundColor(Color::NONE),
+            transform: Transform::from_xyz(0.0, 0.0, 10.0),  // Above the map
+            visibility: Visibility::Hidden,
             ..default()
-        })
-        .with_children(|parent| {
-            parent.spawn(ImageBundle {
-                image: UiImage::new(map_handle.clone()),
+        },
+        SelectionMarker,
+    ));
+
+    // Location popup (UI element that follows world space)
+    commands.spawn((
+        NodeBundle {
+            style: Style {
+                position_type: PositionType::Absolute,
+                padding: UiRect::all(Val::Px(8.0)),
+                ..default()
+            },
+            background_color: BackgroundColor(Color::srgba(0.1, 0.1, 0.1, 0.9)),
+            visibility: Visibility::Hidden,
+            z_index: ZIndex::Global(1000),  // Above everything
+            ..default()
+        },
+        LocationPopup,
+    ))
+    .with_children(|parent| {
+        parent.spawn((
+            TextBundle::from_section(
+                "",
+                TextStyle {
+                    font_size: 14.0,
+                    color: Color::WHITE,
+                    ..default()  // Use Bevy's default font
+                },
+            ),
+            LocationPopupText,
+        ));
+    });
+
+    // Visualization buttons panel at top of map
+    commands.spawn(NodeBundle {
+        style: Style {
+            position_type: PositionType::Absolute,
+            top: Val::Px(10.0),
+            left: Val::Px(10.0),
+            flex_direction: FlexDirection::Row,
+            column_gap: Val::Px(4.0),
+            padding: UiRect::all(Val::Px(8.0)),
+            ..default()
+        },
+        background_color: BackgroundColor(Color::srgba(0.08, 0.09, 0.12, 0.85)),
+        z_index: ZIndex::Global(100),
+        ..default()
+    })
+    .with_children(|parent| {
+        for mode in MapVisualization::ALL {
+            parent.spawn(ButtonBundle {
                 style: Style {
-                    width: Val::Percent(100.0),
-                    height: Val::Percent(100.0),
+                    width: Val::Px(90.0),
+                    height: Val::Px(28.0),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    border: UiRect::all(Val::Px(1.0)),
                     ..default()
                 },
+                background_color: materials.normal,
+                border_color: BorderColor(Color::srgba(0.25, 0.28, 0.35, 0.6)),
                 ..default()
-            });
-
-            parent.spawn((
-                NodeBundle {
-                    style: Style {
-                        position_type: PositionType::Absolute,
-                        width: Val::Px(12.0),
-                        height: Val::Px(12.0),
+            })
+            .insert(VisualizationButton { mode })
+            .with_children(|button| {
+                button.spawn(TextBundle::from_section(
+                    mode.label(),
+                    TextStyle {
+                        font_size: 12.0,
+                        color: Color::srgb(0.9, 0.93, 1.0),
                         ..default()
                     },
-                    background_color: BackgroundColor(Color::srgb(1.0, 0.3, 0.2)),
-                    visibility: Visibility::Hidden,
+                ));
+            });
+        }
+    });
+
+    // Status text for detail inspection
+    commands.spawn(
+        TextBundle {
+            style: Style {
+                position_type: PositionType::Absolute,
+                bottom: Val::Px(10.0),
+                left: Val::Px(10.0),
+                ..default()
+            },
+            text: Text::from_section(
+                "Left-click to inspect blocks | Middle-click to pan | Right-click for info",
+                TextStyle {
+                    font_size: 14.0,
+                    color: Color::srgba(0.9, 0.9, 0.9, 0.8),
                     ..default()
                 },
-                SelectionMarker,
-            ));
-        });
+            ),
+            ..default()
+        },
+    );
 
     let control_window = commands
         .spawn(Window {
@@ -734,14 +862,13 @@ fn setup(
         },))
         .id();
 
-    build_control_panel(&mut commands, control_camera, &materials, detail_handle);
+    build_control_panel(&mut commands, control_camera, &materials);
 }
 
 fn build_control_panel(
     commands: &mut Commands,
     control_camera: Entity,
     materials: &ButtonMaterials,
-    detail_handle: Handle<Image>,
 ) {
     let root = commands
         .spawn((
@@ -763,11 +890,14 @@ fn build_control_panel(
         .id();
 
     commands.entity(root).with_children(|parent| {
-        // Header with improved styling
+        // Header with title and action buttons
         parent
             .spawn(NodeBundle {
                 style: Style {
-                    padding: UiRect::bottom(Val::Px(8.0)),
+                    flex_direction: FlexDirection::Row,
+                    justify_content: JustifyContent::SpaceBetween,
+                    align_items: AlignItems::Center,
+                    padding: UiRect::bottom(Val::Px(12.0)),
                     border: UiRect::bottom(Val::Px(2.0)),
                     ..default()
                 },
@@ -783,254 +913,88 @@ fn build_control_panel(
                         ..default()
                     },
                 ));
+
+                // Action buttons in header
+                header.spawn(NodeBundle {
+                    style: Style {
+                        flex_direction: FlexDirection::Row,
+                        column_gap: Val::Px(12.0),
+                        ..default()
+                    },
+                    ..default()
+                })
+                .with_children(|buttons| {
+                    buttons.spawn(ButtonBundle {
+                        style: Style {
+                            width: Val::Px(150.0),
+                            height: Val::Px(38.0),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            border: UiRect::all(Val::Px(1.0)),
+                            ..default()
+                        },
+                        background_color: BackgroundColor(Color::srgba(
+                            0.15, 0.25, 0.4, 0.95,
+                        )),
+                        border_color: BorderColor(Color::srgba(0.35, 0.45, 0.6, 0.8)),
+                        ..default()
+                    })
+                    .insert(RegenerateButton)
+                    .with_children(|b| {
+                        b.spawn(TextBundle::from_section(
+                            "GENERATE WORLD",
+                            TextStyle {
+                                font_size: 14.0,
+                                color: Color::srgb(0.95, 0.97, 1.0),
+                                ..default()
+                            },
+                        ));
+                    });
+
+                    buttons.spawn(ButtonBundle {
+                        style: Style {
+                            width: Val::Px(140.0),
+                            height: Val::Px(38.0),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            border: UiRect::all(Val::Px(1.0)),
+                            ..default()
+                        },
+                        background_color: BackgroundColor(Color::srgba(
+                            0.12, 0.18, 0.25, 0.95,
+                        )),
+                        border_color: BorderColor(Color::srgba(0.25, 0.35, 0.45, 0.8)),
+                        ..default()
+                    })
+                    .insert(SaveDefaultsButton)
+                    .with_children(|b| {
+                        b.spawn(TextBundle::from_section(
+                            "SAVE DEFAULTS",
+                            TextStyle {
+                                font_size: 14.0,
+                                color: Color::srgb(0.9, 0.93, 0.98),
+                                ..default()
+                            },
+                        ));
+                    });
+                });
             });
 
-        // Two column layout
+        // Main content area - World Parameters
         parent
             .spawn(NodeBundle {
                 style: Style {
-                    flex_direction: FlexDirection::Row,
+                    flex_direction: FlexDirection::Column,
                     flex_grow: 1.0,
-                    column_gap: Val::Px(16.0),
+                    row_gap: Val::Px(12.0),
                     ..default()
                 },
                 ..default()
             })
-            .with_children(|columns| {
-                // LEFT COLUMN - Map & Visualization
-                columns
+            .with_children(|main_content| {
+                // World size section
+                main_content
                     .spawn(NodeBundle {
-                        style: Style {
-                            flex_direction: FlexDirection::Column,
-                            flex_basis: Val::Percent(50.0),
-                            row_gap: Val::Px(12.0),
-                            ..default()
-                        },
-                        ..default()
-                    })
-                    .with_children(|left_col| {
-                        // Map Visualization Controls
-                        left_col.spawn(TextBundle::from_section(
-                            "MAP VISUALIZATION",
-                            TextStyle {
-                                font_size: 14.0,
-                                color: Color::srgba(0.65, 0.7, 0.8, 0.9),
-                                ..default()
-                            },
-                        ));
-
-                        left_col
-                            .spawn(NodeBundle {
-                                style: Style {
-                                    flex_direction: FlexDirection::Row,
-                                    flex_wrap: FlexWrap::Wrap,
-                                    row_gap: Val::Px(8.0),
-                                    column_gap: Val::Px(8.0),
-                                    padding: UiRect::all(Val::Px(16.0)),
-                                    border: UiRect::all(Val::Px(1.0)),
-                                    ..default()
-                                },
-                                background_color: BackgroundColor(Color::srgba(
-                                    0.08, 0.09, 0.12, 0.5,
-                                )),
-                                border_color: BorderColor(Color::srgba(0.2, 0.22, 0.28, 0.5)),
-                                ..default()
-                            })
-                            .with_children(|row| {
-                                for mode in MapVisualization::ALL {
-                                    row.spawn(ButtonBundle {
-                                        style: Style {
-                                            width: Val::Px(100.0),
-                                            height: Val::Px(32.0),
-                                            justify_content: JustifyContent::Center,
-                                            align_items: AlignItems::Center,
-                                            border: UiRect::all(Val::Px(1.0)),
-                                            ..default()
-                                        },
-                                        background_color: materials.normal,
-                                        border_color: BorderColor(Color::srgba(
-                                            0.25, 0.28, 0.35, 0.6,
-                                        )),
-                                        ..default()
-                                    })
-                                    .insert(VisualizationButton { mode })
-                                    .with_children(|button| {
-                                        button.spawn(TextBundle::from_section(
-                                            mode.label(),
-                                            TextStyle {
-                                                font_size: 13.0,
-                                                color: Color::srgb(0.9, 0.93, 1.0),
-                                                ..default()
-                                            },
-                                        ));
-                                    });
-                                }
-                            });
-
-                        // Selection Preview
-                        left_col.spawn(TextBundle::from_section(
-                            "SELECTION PREVIEW",
-                            TextStyle {
-                                font_size: 14.0,
-                                color: Color::srgba(0.65, 0.7, 0.8, 0.9),
-                                ..default()
-                            },
-                        ));
-
-                        left_col
-                            .spawn(NodeBundle {
-                                style: Style {
-                                    flex_direction: FlexDirection::Row,
-                                    align_items: AlignItems::Center,
-                                    column_gap: Val::Px(16.0),
-                                    padding: UiRect::all(Val::Px(16.0)),
-                                    border: UiRect::all(Val::Px(1.0)),
-                                    ..default()
-                                },
-                                background_color: BackgroundColor(Color::srgba(
-                                    0.08, 0.09, 0.12, 0.5,
-                                )),
-                                border_color: BorderColor(Color::srgba(0.2, 0.22, 0.28, 0.5)),
-                                ..default()
-                            })
-                            .with_children(|row| {
-                                // Wrap the image in a container with a border
-                                row.spawn(NodeBundle {
-                                    style: Style {
-                                        width: Val::Px(196.0),
-                                        height: Val::Px(196.0),
-                                        padding: UiRect::all(Val::Px(2.0)),
-                                        border: UiRect::all(Val::Px(2.0)),
-                                        ..default()
-                                    },
-                                    background_color: BackgroundColor(Color::srgba(
-                                        0.1, 0.11, 0.14, 0.8,
-                                    )),
-                                    border_color: BorderColor(Color::srgba(0.3, 0.35, 0.4, 0.8)),
-                                    ..default()
-                                })
-                                .with_children(|container| {
-                                    container
-                                        .spawn(ImageBundle {
-                                            image: UiImage::new(detail_handle.clone()),
-                                            style: Style {
-                                                width: Val::Px(192.0),
-                                                height: Val::Px(192.0),
-                                                ..default()
-                                            },
-                                            ..default()
-                                        })
-                                        .insert(DetailImage);
-                                });
-
-                                row.spawn(
-                                    TextBundle::from_section(
-                                        "Click on the map to inspect a location.",
-                                        TextStyle {
-                                            font_size: 13.0,
-                                            color: Color::srgb(0.75, 0.8, 0.88),
-                                            ..default()
-                                        },
-                                    )
-                                    .with_style(Style {
-                                        flex_wrap: FlexWrap::Wrap,
-                                        max_width: Val::Px(240.0),
-                                        ..default()
-                                    }),
-                                )
-                                .insert(SelectionSummaryText);
-                            });
-
-                        // Action buttons
-                        left_col
-                            .spawn(NodeBundle {
-                                style: Style {
-                                    flex_direction: FlexDirection::Row,
-                                    justify_content: JustifyContent::FlexStart,
-                                    align_items: AlignItems::Center,
-                                    column_gap: Val::Px(12.0),
-                                    padding: UiRect::all(Val::Px(16.0)),
-                                    border: UiRect::all(Val::Px(1.0)),
-                                    ..default()
-                                },
-                                background_color: BackgroundColor(Color::srgba(
-                                    0.08, 0.09, 0.12, 0.5,
-                                )),
-                                border_color: BorderColor(Color::srgba(0.2, 0.22, 0.28, 0.5)),
-                                ..default()
-                            })
-                            .with_children(|row| {
-                                row.spawn(ButtonBundle {
-                                    style: Style {
-                                        width: Val::Px(150.0),
-                                        height: Val::Px(42.0),
-                                        justify_content: JustifyContent::Center,
-                                        align_items: AlignItems::Center,
-                                        border: UiRect::all(Val::Px(1.0)),
-                                        ..default()
-                                    },
-                                    background_color: BackgroundColor(Color::srgba(
-                                        0.15, 0.25, 0.4, 0.95,
-                                    )),
-                                    border_color: BorderColor(Color::srgba(0.35, 0.45, 0.6, 0.8)),
-                                    ..default()
-                                })
-                                .insert(RegenerateButton)
-                                .with_children(|b| {
-                                    b.spawn(TextBundle::from_section(
-                                        "GENERATE WORLD",
-                                        TextStyle {
-                                            font_size: 14.0,
-                                            color: Color::srgb(0.95, 0.97, 1.0),
-                                            ..default()
-                                        },
-                                    ));
-                                });
-
-                                row.spawn(ButtonBundle {
-                                    style: Style {
-                                        width: Val::Px(150.0),
-                                        height: Val::Px(42.0),
-                                        justify_content: JustifyContent::Center,
-                                        align_items: AlignItems::Center,
-                                        border: UiRect::all(Val::Px(1.0)),
-                                        ..default()
-                                    },
-                                    background_color: BackgroundColor(Color::srgba(
-                                        0.12, 0.18, 0.25, 0.95,
-                                    )),
-                                    border_color: BorderColor(Color::srgba(0.25, 0.35, 0.45, 0.8)),
-                                    ..default()
-                                })
-                                .insert(SaveDefaultsButton)
-                                .with_children(|b| {
-                                    b.spawn(TextBundle::from_section(
-                                        "SAVE DEFAULTS",
-                                        TextStyle {
-                                            font_size: 14.0,
-                                            color: Color::srgb(0.9, 0.93, 0.98),
-                                            ..default()
-                                        },
-                                    ));
-                                });
-                            });
-                    });
-
-                // RIGHT COLUMN - World Parameters
-                columns
-                    .spawn(NodeBundle {
-                        style: Style {
-                            flex_direction: FlexDirection::Column,
-                            flex_basis: Val::Percent(50.0),
-                            row_gap: Val::Px(12.0),
-                            ..default()
-                        },
-                        ..default()
-                    })
-                    .with_children(|right_col| {
-                        // World size section
-                        right_col
-                            .spawn(NodeBundle {
                                 style: Style {
                                     flex_direction: FlexDirection::Column,
                                     row_gap: Val::Px(10.0),
@@ -1108,9 +1072,9 @@ fn build_control_panel(
                                     });
                             });
 
-                        // Parameter tabs
-                        right_col
-                            .spawn(NodeBundle {
+                // Parameter tabs
+                main_content
+                    .spawn(NodeBundle {
                                 style: Style {
                                     flex_direction: FlexDirection::Row,
                                     column_gap: Val::Px(4.0),
@@ -1150,9 +1114,9 @@ fn build_control_panel(
                                 }
                             });
 
-                        // Parameter panels with scrollable container
-                        right_col
-                            .spawn(NodeBundle {
+                // Parameter panels with scrollable container
+                main_content
+                    .spawn(NodeBundle {
                                 style: Style {
                                     flex_direction: FlexDirection::Column,
                                     border: UiRect::all(Val::Px(1.0)),
@@ -1208,7 +1172,6 @@ fn build_control_panel(
                             });
                     });
             });
-    });
 }
 
 fn button_bundle(materials: &ButtonMaterials, size: Vec2) -> ButtonBundle {
@@ -1622,6 +1585,285 @@ fn handle_regenerate_button(
     }
 }
 
+fn handle_map_zoom(
+    mut wheel_events: EventReader<MouseWheel>,
+    mut camera_query: Query<(&mut OrthographicProjection, &mut Transform), With<Camera2d>>,
+    mut state: ResMut<WorldBuilderState>,
+    windows: Query<&Window, With<PrimaryWindow>>,
+) {
+    // Only process events if the main window has focus
+    let Ok(window) = windows.get_single() else {
+        return;
+    };
+
+    if !window.focused {
+        return;
+    }
+
+    for event in wheel_events.read() {
+        // Use the mouse wheel Y delta for zooming (reduced sensitivity)
+        let zoom_delta = -event.y * 0.01;  // Smooth zoom
+        state.camera_zoom = (state.camera_zoom * (1.0 + zoom_delta)).clamp(0.1, 50.0);
+
+        // Update the first camera we find (should be the map camera)
+        // In Bevy: projection.scale < 1.0 = zoomed IN, > 1.0 = zoomed OUT
+        // But our camera_zoom is opposite: > 1.0 = zoomed IN, < 1.0 = zoomed OUT
+        // So we need to invert it for the projection
+        for (mut projection, _transform) in camera_query.iter_mut() {
+            projection.scale = 1.0 / state.camera_zoom;
+            break; // Only update the first camera
+        }
+    }
+}
+
+fn handle_map_pan(
+    mut state: ResMut<WorldBuilderState>,
+    mouse_button: Res<ButtonInput<MouseButton>>,
+    mut motion_events: EventReader<MouseMotion>,
+    mut camera_query: Query<&mut Transform, With<Camera2d>>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+) {
+    let Ok(window) = window_query.get_single() else {
+        return;
+    };
+
+    if !window.focused {
+        return;
+    }
+
+    // Check if we should start or stop panning (use middle mouse button)
+    if mouse_button.just_pressed(MouseButton::Middle) {
+        if let Some(cursor_position) = window.cursor_position() {
+            state.is_panning = true;
+            state.last_mouse_position = Some(cursor_position);
+        }
+    }
+
+    if mouse_button.just_released(MouseButton::Middle) {
+        state.is_panning = false;
+        state.last_mouse_position = None;
+    }
+
+    // Handle panning motion
+    if state.is_panning {
+        let mut delta = Vec2::ZERO;
+        for event in motion_events.read() {
+            delta += event.delta;
+        }
+
+        if delta.length() > 0.01 {
+            // Adjust for zoom level and invert Y (screen coords are inverted)
+            delta *= state.camera_zoom;
+            delta.y = -delta.y;
+
+            state.camera_translation -= delta;
+
+            // Update the first camera we find
+            for mut camera in camera_query.iter_mut() {
+                camera.translation.x = state.camera_translation.x;
+                camera.translation.y = state.camera_translation.y;
+                break; // Only update first camera
+            }
+        }
+    }
+}
+
+fn update_location_popup(
+    state: Res<WorldBuilderState>,
+    mut popup_query: Query<(&mut Visibility, &mut Transform), (With<LocationPopup>, Without<Camera2d>)>,
+    mut text_query: Query<&mut Text, With<LocationPopupText>>,
+) {
+    // Only show popup if we have a selection and popup is enabled
+    if let Some(selection) = state.selection {
+        if state.show_popup {
+            // Show the popup
+            for (mut visibility, mut transform) in popup_query.iter_mut() {
+                *visibility = Visibility::Visible;
+
+                // Position popup near the selected location (in world space)
+                if let Some((world_x, world_z)) = state.popup_world_pos {
+                    transform.translation.x = world_x;
+                    transform.translation.y = world_z + 30.0; // Offset above the selection
+                    transform.translation.z = 100.0; // Above everything else
+                }
+            }
+
+            // Update popup text
+            for mut text in text_query.iter_mut() {
+                text.sections[0].value = format!(
+                    "Pos: ({:.0}, {:.0})\nHeight: {:.1}m\nBiome: {}\nTemp: {:.1}°C\nMoisture: {:.1}%",
+                    selection.world_x,
+                    selection.world_z,
+                    selection.height,
+                    format!("{:?}", selection.biome),
+                    selection.temperature_c,
+                    selection.moisture * 100.0
+                );
+            }
+        } else {
+            // Hide the popup
+            for (mut visibility, _) in popup_query.iter_mut() {
+                *visibility = Visibility::Hidden;
+            }
+        }
+    } else {
+        // No selection, hide popup
+        for (mut visibility, _) in popup_query.iter_mut() {
+            *visibility = Visibility::Hidden;
+        }
+    }
+}
+
+fn update_detail_view(
+    mut commands: Commands,
+    state: Res<WorldBuilderState>,
+    mut images: ResMut<Assets<Image>>,
+    mut detail_window: ResMut<DetailWindow>,
+    mut detail_query: Query<&mut Handle<Image>, With<DetailImage>>,
+) {
+    // Check if we need to create or update the detail window
+    if let Some(center) = state.detail_center {
+        // Create detail window if it doesn't exist
+        if detail_window.entity.is_none() {
+            create_detail_window(&mut commands, &mut detail_window, &mut images, &state.generator, center, state.visualization);
+            detail_window.last_center = Some(center);
+            return; // Window creation happens this frame
+        }
+
+        // Check if the center has changed (new click location)
+        let should_render = detail_window.last_center != Some(center);
+
+        if should_render {
+            // Render the 512x512 block-level view
+            if let Ok(mut image_handle) = detail_query.get_single_mut() {
+                let mut detail_image = Image::new_fill(
+                    Extent3d {
+                        width: 512,
+                        height: 512,
+                        depth_or_array_layers: 1,
+                    },
+                    TextureDimension::D2,
+                    &[0, 0, 0, 255],
+                    TextureFormat::Rgba8UnormSrgb,
+                    RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+                );
+                detail_image.sampler = ImageSampler::nearest();
+
+                // Render 512x512 blocks centered at the click position
+                render_block_detail(&mut detail_image, &state.generator, center, state.visualization);
+
+                // Update the image handle
+                let new_handle = images.add(detail_image);
+                *image_handle = new_handle;
+
+                detail_window.last_center = Some(center);
+                info!("Rendered detail view at world position ({:.0}, {:.0})", center.x, center.y);
+            }
+        }
+    }
+}
+
+fn create_detail_window(
+    commands: &mut Commands,
+    detail_window: &mut DetailWindow,
+    images: &mut Assets<Image>,
+    generator: &WorldGenerator,
+    center: Vec2,
+    visualization: MapVisualization,
+) {
+    // Create the detail window
+    let window_entity = commands.spawn(Window {
+        title: "World Builder - Block Detail (512x512)".into(),
+        resolution: WindowResolution::new(512.0, 512.0),
+        present_mode: PresentMode::AutoVsync,
+        resizable: false,
+        ..default()
+    }).id();
+
+    // Create camera for detail window (on render layer 1)
+    let camera_entity = commands.spawn((
+        Camera2dBundle {
+            camera: Camera {
+                target: RenderTarget::Window(WindowRef::Entity(window_entity)),
+                clear_color: ClearColorConfig::Custom(Color::BLACK),
+                ..default()
+            },
+            ..default()
+        },
+        DetailWindowCamera,
+        RenderLayers::layer(1), // Detail camera only sees layer 1
+    )).id();
+
+    // Create initial image with the actual detail content
+    let mut detail_image = Image::new_fill(
+        Extent3d {
+            width: 512,
+            height: 512,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        &[0, 0, 0, 255],
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+    );
+    detail_image.sampler = ImageSampler::nearest();
+
+    // Render the initial detail view
+    render_block_detail(&mut detail_image, generator, center, visualization);
+    let image_handle = images.add(detail_image);
+
+    // Create sprite to display the detail image (on render layer 1)
+    commands.spawn((
+        SpriteBundle {
+            texture: image_handle,
+            transform: Transform::from_xyz(0.0, 0.0, 0.0),
+            ..default()
+        },
+        DetailImage,
+        RenderLayers::layer(1), // Detail sprite only renders on layer 1
+    ));
+
+    // Store references
+    detail_window.entity = Some(window_entity);
+    detail_window.camera = Some(camera_entity);
+}
+
+fn render_block_detail(
+    image: &mut Image,
+    generator: &WorldGenerator,
+    center: Vec2,
+    visualization: MapVisualization,
+) {
+    let data = &mut image.data;
+
+    // Each pixel represents exactly 1 block
+    // Center the 512x512 area around the clicked position
+    let start_x = center.x - 256.0;
+    let start_z = center.y - 256.0;
+
+    info!("Rendering detail view from ({:.0}, {:.0}) to ({:.0}, {:.0})",
+        start_x, start_z, start_x + 512.0, start_z + 512.0);
+
+    // Sample the center point to see what we're looking at
+    let sample_height = generator.get_height(center.x, center.y);
+    info!("Center point at ({:.0}, {:.0}): height={:.1}", center.x, center.y, sample_height);
+
+    // Render the detail view with the same coordinate system as the main map
+    for y in 0..512 {
+        for x in 0..512 {
+            let world_x = start_x + x as f32;
+            // Direct mapping - no flip needed since we're handling it in the click handler
+            let world_z = start_z + y as f32;
+
+            // Get the color for this exact block
+            let color = color_for_mode(generator, world_x, world_z, visualization);
+
+            let index = ((y * 512 + x) * 4) as usize;
+            data[index..index + 4].copy_from_slice(&color);
+        }
+    }
+}
+
 fn handle_save_defaults_button(
     materials: Res<ButtonMaterials>,
     mut interaction_query: Query<
@@ -1719,31 +1961,26 @@ fn update_selection_text(
 
 fn apply_selection_marker(
     state: Res<WorldBuilderState>,
-    mut marker_query: Query<(&mut Style, &mut Visibility), With<SelectionMarker>>,
-    window_query: Query<&Window, With<PrimaryWindow>>,
+    mut marker_query: Query<(&mut Transform, &mut Visibility), With<SelectionMarker>>,
 ) {
     if !state.is_changed() {
         return;
     }
 
-    let Ok(window) = window_query.get_single() else {
-        return;
-    };
-
-    let width = window.width();
-    let height = window.height();
-
-    if let Ok((mut style, mut visibility)) = marker_query.get_single_mut() {
+    if let Ok((mut transform, mut visibility)) = marker_query.get_single_mut() {
         if let Some(selection) = state.selection {
+            // Convert world terrain coordinates to map sprite position
             let map_size = state.generator.planet_size() as f32;
             let u = selection.world_x / map_size;
             let v = selection.world_z / map_size;
-            let x = (u * width).clamp(0.0, width);
-            let y = (v * height).clamp(0.0, height);
-            style.left = Val::Px(x - 6.0);
-            style.right = Val::Auto;
-            style.top = Val::Px(y - 6.0);
-            style.bottom = Val::Auto;
+
+            // Convert to world space position on the map sprite
+            let x = (u - 0.5) * MAP_WIDTH as f32;
+            let y = (0.5 - v) * MAP_HEIGHT as f32;  // Invert Y axis
+
+            transform.translation.x = x;
+            transform.translation.y = y;
+            transform.translation.z = 10.0;  // Above the map
             *visibility = Visibility::Visible;
         } else {
             *visibility = Visibility::Hidden;
@@ -1756,6 +1993,7 @@ fn redraw_map_when_needed(
     mut regenerate: EventReader<RegenerateRequested>,
     mut images: ResMut<Assets<Image>>,
     textures: Res<MapTextures>,
+    mut sprite_query: Query<&mut Handle<Image>, With<MapSprite>>,
 ) {
     let mut rebuild_generator = false;
     for _ in regenerate.read() {
@@ -1775,69 +2013,167 @@ fn redraw_map_when_needed(
         state.repaint_requested = true;
     }
 
+    // Only re-render when explicitly requested
     if !state.repaint_requested {
         return;
     }
 
-    if let Some(image) = images.get_mut(&textures.map) {
-        info!(
-            "Painting world map ({}x{})",
-            image.texture_descriptor.size.width, image.texture_descriptor.size.height
-        );
-        paint_map(image, &state.generator, state.visualization);
+    // Always use base resolution for the overview map
+    let texture_width = MAP_WIDTH;
+    let texture_height = MAP_HEIGHT;
+
+    info!("Rendering overview map at {}x{}", texture_width, texture_height);
+
+    // Create a new image with base resolution
+    let mut new_image = Image::new_fill(
+        Extent3d {
+            width: texture_width,
+            height: texture_height,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        &[0, 0, 0, 255],
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+    );
+
+    // Paint the entire map (full planet view)
+    paint_map(
+        &mut new_image,
+        &state.generator,
+        state.visualization,
+    );
+
+    // Create a new handle for the updated image
+    let new_handle = images.add(new_image);
+
+    // Update the sprite to use the new texture
+    if let Ok(mut sprite_handle) = sprite_query.get_single_mut() {
+        *sprite_handle = new_handle;
+        info!("Updated map texture");
     } else {
-        warn!("World map image asset missing during repaint");
+        warn!("Could not find MapSprite to update");
     }
+
+    // Remove the old image to free memory
+    images.remove(&textures.map);
 
     state.repaint_requested = false;
 }
 
-fn update_detail_texture(
-    state: Res<WorldBuilderState>,
-    mut images: ResMut<Assets<Image>>,
-    textures: Res<MapTextures>,
-) {
-    if !state.is_changed() {
-        return;
-    }
-
-    let Some(selection) = state.selection else {
-        return;
-    };
-
-    if let Some(image) = images.get_mut(&textures.detail) {
-        paint_detail(image, &state.generator, selection, state.visualization);
-    }
-}
 
 fn handle_map_click(
+    mut commands: Commands,
     buttons: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window, With<PrimaryWindow>>,
+    camera_query: Query<(&Camera, &GlobalTransform), With<MapCamera>>,
     mut state: ResMut<WorldBuilderState>,
+    mut detail_window: ResMut<DetailWindow>,
+    marker_query: Query<Entity, With<InspectionMarker>>,
 ) {
-    if !buttons.just_pressed(MouseButton::Left) {
-        return;
+    // Left click for detail inspection
+    if buttons.just_pressed(MouseButton::Left) {
+        info!("Left click detected!");
+
+        let Ok(window) = windows.get_single() else {
+            warn!("Could not find primary window");
+            return;
+        };
+
+        let Some(cursor) = window.cursor_position() else {
+            warn!("No cursor position available");
+            return;
+        };
+
+        info!("Cursor position: {:?}", cursor);
+
+        let Ok((camera, camera_transform)) = camera_query.get_single() else {
+            warn!("Could not find map camera");
+            return;
+        };
+
+        // Convert screen position to world position
+        let Some(world_pos) = camera.viewport_to_world_2d(camera_transform, cursor) else {
+            return;
+        };
+
+        // Map world position to terrain coordinates
+        // The map sprite is centered at (0,0) with size MAP_WIDTH x MAP_HEIGHT
+        let map_x = world_pos.x + (MAP_WIDTH as f32 / 2.0);
+        let map_y = world_pos.y + (MAP_HEIGHT as f32 / 2.0);
+
+        // Convert to world terrain coordinates
+        // Note: We need to flip the Y axis because:
+        // - In Bevy screen space, Y increases upward
+        // - In texture space, Y=0 is at the top and increases downward
+        // - The paint_map function maps y/height directly to world_z
+        let map_size = state.generator.planet_size() as f32;
+        let world_x = (map_x / MAP_WIDTH as f32) * map_size;
+        let world_z = ((MAP_HEIGHT as f32 - map_y) / MAP_HEIGHT as f32) * map_size;
+
+        // Set detail center for block-level inspection (note: using X and Z for terrain)
+        state.detail_center = Some(Vec2::new(world_x, world_z));
+        info!("Inspecting blocks at world position ({:.0}, {:.0})", world_x, world_z);
+        info!("Map click at ({:.1}, {:.1}) -> world ({:.0}, {:.0})", map_x, map_y, world_x, world_z);
+
+        // Remove old marker if it exists
+        if let Some(old_marker) = detail_window.marker_entity {
+            commands.entity(old_marker).despawn_recursive();
+        }
+
+        // Create a red square marker on the map showing the 512x512 area
+        let marker_size = 512.0 * (MAP_WIDTH as f32 / map_size);
+        let marker_entity = commands.spawn((
+            SpriteBundle {
+                sprite: Sprite {
+                    color: Color::rgba(1.0, 0.0, 0.0, 0.5),
+                    custom_size: Some(Vec2::new(marker_size, marker_size)),
+                    ..default()
+                },
+                transform: Transform::from_xyz(world_pos.x, world_pos.y, 10.0),
+                ..default()
+            },
+            InspectionMarker,
+            RenderLayers::default(), // On the main map layer
+        )).id();
+
+        detail_window.marker_entity = Some(marker_entity);
     }
 
-    let Ok(window) = windows.get_single() else {
-        return;
-    };
+    // Right click for selection info
+    if buttons.just_pressed(MouseButton::Right) {
+        let Ok(window) = windows.get_single() else {
+            return;
+        };
 
-    let Some(cursor) = window.cursor_position() else {
-        return;
-    };
+        let Some(cursor) = window.cursor_position() else {
+            return;
+        };
 
-    let width = window.width();
-    let height = window.height();
+        let Ok((camera, camera_transform)) = camera_query.get_single() else {
+            return;
+        };
 
-    let u = (cursor.x.clamp(0.0, width)) / width;
-    let v = (cursor.y.clamp(0.0, height)) / height;
+        // Convert screen position to world position
+        let Some(world_pos) = camera.viewport_to_world_2d(camera_transform, cursor) else {
+            return;
+        };
 
-    let map_size = state.generator.planet_size() as f32;
-    let world_x = u * map_size;
-    let world_z = v * map_size;
+        // Map world position to terrain coordinates
+        // The map sprite is centered at (0,0) with size MAP_WIDTH x MAP_HEIGHT
+        let map_x = world_pos.x + (MAP_WIDTH as f32 / 2.0);
+        let map_z = world_pos.y + (MAP_HEIGHT as f32 / 2.0);
 
-    state.selection = Some(refresh_selection(&state.generator, world_x, world_z));
+        // Convert to world terrain coordinates
+        let map_size = state.generator.planet_size() as f32;
+        let world_x = (map_x / MAP_WIDTH as f32) * map_size;
+        let world_z = (map_z / MAP_HEIGHT as f32) * map_size;
+
+        // Store the selection and popup position
+        state.selection = Some(refresh_selection(&state.generator, world_x, world_z));
+        state.popup_world_pos = Some((world_pos.x, world_pos.y));
+        state.show_popup = true;
+    }
 }
 
 fn handle_scroll_events(
@@ -1896,53 +2232,52 @@ fn refresh_selection(generator: &WorldGenerator, world_x: f32, world_z: f32) -> 
 fn paint_map(image: &mut Image, generator: &WorldGenerator, visualization: MapVisualization) {
     let width = image.texture_descriptor.size.width;
     let height = image.texture_descriptor.size.height;
-
     let planet_size = generator.planet_size() as f32;
+
     let data = &mut image.data;
     data.resize((width * height * 4) as usize, 0);
 
+    // No super-sampling for overview map
+    let sample_rate = 1;
+
     for y in 0..height {
         for x in 0..width {
+            // Map pixel to world coordinates (entire planet)
             let u = x as f32 / width as f32;
             let v = y as f32 / height as f32;
             let world_x = u * planet_size;
             let world_z = v * planet_size;
-            let color = color_for_mode(generator, world_x, world_z, visualization);
+
+            let color = if sample_rate > 1 {
+                // Super-sampling for smoother appearance when zoomed in
+                let mut r = 0u32;
+                let mut g = 0u32;
+                let mut b = 0u32;
+                let step = planet_size / (width as f32 * sample_rate as f32);
+
+                for sy in 0..sample_rate {
+                    for sx in 0..sample_rate {
+                        let sample_x = world_x + sx as f32 * step;
+                        let sample_z = world_z + sy as f32 * step;
+                        let sample_color = color_for_mode(generator, sample_x, sample_z, visualization);
+                        r += sample_color[0] as u32;
+                        g += sample_color[1] as u32;
+                        b += sample_color[2] as u32;
+                    }
+                }
+
+                let samples = (sample_rate * sample_rate) as u32;
+                [(r / samples) as u8, (g / samples) as u8, (b / samples) as u8, 255]
+            } else {
+                color_for_mode(generator, world_x, world_z, visualization)
+            };
+
             let index = ((y * width + x) * 4) as usize;
             data[index..index + 4].copy_from_slice(&color);
         }
     }
 }
 
-fn paint_detail(
-    image: &mut Image,
-    generator: &WorldGenerator,
-    selection: SelectionDetail,
-    visualization: MapVisualization,
-) {
-    let width = image.texture_descriptor.size.width;
-    let height = image.texture_descriptor.size.height;
-    let data = &mut image.data;
-    data.resize((width * height * 4) as usize, 0);
-
-    let span = DETAIL_WORLD_SPAN;
-    let start_x = selection.world_x - span * 0.5;
-    let start_z = selection.world_z - span * 0.5;
-
-    let planet_size = generator.planet_size() as f32;
-
-    for y in 0..height {
-        for x in 0..width {
-            let fx = x as f32 / width as f32;
-            let fz = y as f32 / height as f32;
-            let world_x = (start_x + fx * span).rem_euclid(planet_size);
-            let world_z = (start_z + fz * span).rem_euclid(planet_size);
-            let color = color_for_mode(generator, world_x, world_z, visualization);
-            let index = ((y * width + x) * 4) as usize;
-            data[index..index + 4].copy_from_slice(&color);
-        }
-    }
-}
 
 fn color_for_mode(
     generator: &WorldGenerator,

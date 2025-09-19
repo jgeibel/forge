@@ -183,52 +183,86 @@ impl Default for WorldGenConfig {
 impl WorldGenConfig {
     pub fn from_planet_config(config: &PlanetConfig) -> Self {
         let planet_size = config.size_chunks as u32 * 32;
-        let size_scale = planet_size.max(1) as f32 / 16384.0;
 
-        let base_continent_count = ((planet_size as f32) / 4096.0).clamp(3.0, 7.0).round() as u32;
-        let radius_scale = (planet_size as f32 / 16384.0).clamp(0.9, 1.45);
+        // Standard world size for frequency calculations (16384 blocks = 512 chunks)
+        const STANDARD_WORLD_SIZE: f32 = 16384.0;
+
+        // Frequency scaling factor - inverse relationship for scale-invariant features
+        // Larger worlds need higher frequencies to maintain same physical feature size
+        let frequency_scale = planet_size.max(1) as f64 / STANDARD_WORLD_SIZE as f64;
+
+        // SCALE-DEPENDENT: Features that scale with world size
+        // Continent count scales logarithmically - more continents on larger worlds but not linearly
+        let continent_count = ((planet_size as f32).log2() * 0.4).max(3.0).min(20.0).round() as u32;
+        // Continent radius scales proportionally to maintain map appearance
+        let continent_radius = 0.23 * (planet_size as f32 / STANDARD_WORLD_SIZE).sqrt();
+        // Major river count scales with world area
+        let major_river_count = ((planet_size as f32 / STANDARD_WORLD_SIZE).sqrt() * 10.0)
+            .max(5.0).min(100.0).round() as u32;
 
         Self {
             seed: config.seed,
             planet_size,
             sea_level: config.sea_level,
-            ocean_depth: 15.0 * size_scale.clamp(0.7, 1.2),
-            deep_ocean_depth: 22.0 * size_scale.clamp(0.8, 1.4),
+
+            // SCALE-INVARIANT: Physical ocean dimensions always constant in blocks
+            ocean_depth: 50.0,  // Continental shelf depth ~50 blocks (50m)
+            deep_ocean_depth: 200.0,  // Deep ocean ~200 blocks (200m) - scaled for gameplay
+
+            // SCALE-DEPENDENT: Continental distribution
             continent_threshold: 0.18,
             continent_power: 0.95,
             continent_bias: 0.34,
-            continent_count: base_continent_count,
-            continent_radius: 0.23 * radius_scale,
+            continent_count,  // Logarithmic scaling
+            continent_radius,  // Proportional scaling
             continent_edge_power: 1.2,
-            continent_frequency: 0.45,
-            detail_frequency: 7.1,
-            detail_amplitude: 16.0,
-            mountain_frequency: 1.8,
-            mountain_height: 78.0 * size_scale.clamp(0.8, 1.4),
+            continent_frequency: 0.45 * frequency_scale,  // More continents, same physical size
+
+            // SCALE-INVARIANT: Terrain detail (hills, valleys)
+            detail_frequency: 7.1 / frequency_scale,  // Higher freq = more hills of same size
+            detail_amplitude: 12.0,  // Hills always 12 blocks tall
+
+            // SCALE-INVARIANT: Mountain dimensions
+            mountain_frequency: 1.8 / frequency_scale,  // More mountains, same size each
+            mountain_height: 250.0,  // Mountains rise 250 blocks (250m) - more realistic
             mountain_threshold: 0.42,
-            moisture_frequency: 2.6,
+
+            // SCALE-INVARIANT: Biome transitions
+            moisture_frequency: 2.6 / frequency_scale,  // Biome patches same physical size
+
+            // Climate (scale-independent)
             equator_temp_c: 28.0,
             pole_temp_c: -30.0,
             lapse_rate_c_per_block: 0.008,
             temperature_variation: 3.0,
-            highland_bonus: 20.0,
-            island_frequency: 7.1,
+
+            // SCALE-INVARIANT: Highland/plateau heights
+            highland_bonus: 20.0,  // Highlands always 20 blocks above base
+
+            // SCALE-INVARIANT: Island dimensions
+            island_frequency: 7.1 / frequency_scale,  // More islands, same size each
             island_threshold: 0.55,
-            island_height: 86.0,
+            island_height: 30.0,  // Islands always rise 30 blocks max
             island_falloff: 2.8,
-            hydrology_resolution: 1536,
+
+            // Hydrology
+            hydrology_resolution: ((planet_size as f32 / 16.0).sqrt() as u32).max(256).min(4096),
             hydrology_rainfall: 1.4,
             hydrology_rainfall_variance: 0.4,
-            hydrology_rainfall_frequency: 0.8,
-            hydrology_major_river_count: 10,
+            hydrology_rainfall_frequency: 0.8 / frequency_scale,  // Rain patterns scale-invariant
+            hydrology_major_river_count: major_river_count,  // Scale-dependent
             hydrology_major_river_boost: 6.0,
+
+            // SCALE-INVARIANT: River physical dimensions
             river_flow_threshold: 120.0,
             river_depth_scale: 0.06,
-            river_max_depth: 22.0,
+            river_max_depth: 18.0,  // Rivers always max 18 blocks deep
             river_surface_ratio: 0.65,
+
+            // SCALE-INVARIANT: Lake dimensions
             lake_flow_threshold: 140.0,
-            lake_depth: 6.0,
-            lake_shore_blend: 3.0,
+            lake_depth: 15.0,  // Lakes average 15 blocks deep (15m) - more realistic
+            lake_shore_blend: 5.0,  // Shore transition 5 blocks for gradual slope
         }
     }
 }
@@ -955,7 +989,7 @@ impl WorldGenerator {
         let temperature_c = self.sample_temperature_c(world_x, world_z, height);
         let moisture = self.sample_moisture(world_x, world_z);
 
-        self.classify_biome(height, temperature_c, moisture)
+        self.classify_biome_at_position(world_x, world_z, height, temperature_c, moisture)
     }
 
     pub fn get_moisture(&self, world_x: f32, world_z: f32) -> f32 {
@@ -1161,7 +1195,7 @@ impl WorldGenerator {
         base_temp - lapse + variation
     }
 
-    fn classify_biome(&self, height: f32, temp_c: f32, moisture: f32) -> Biome {
+    fn classify_biome_at_position(&self, world_x: f32, world_z: f32, height: f32, temp_c: f32, moisture: f32) -> Biome {
         let sea_level = self.config.sea_level;
         let deep_ocean_cutoff = sea_level - self.config.deep_ocean_depth;
         let shallow_ocean_cutoff = sea_level - 1.5;
@@ -1182,12 +1216,42 @@ impl WorldGenerator {
             };
         }
 
-        if height < sea_level + 2.0 {
-            return if temp_c < 0.0 {
-                Biome::Snow
-            } else {
-                Biome::Beach
-            };
+        // SCALE-INVARIANT: Beaches require both elevation criteria AND proximity to water
+        const BEACH_MIN_ELEVATION: f32 = 0.1;   // Just above sea level
+        const BEACH_MAX_ELEVATION: f32 = 2.5;   // Maximum 2.5 blocks above sea level
+        const BEACH_CHECK_DISTANCE: f32 = 20.0;  // Check within 20 blocks for water
+
+        // Check if we're in beach elevation range
+        let elevation_above_sea = height - sea_level;
+        if elevation_above_sea >= BEACH_MIN_ELEVATION && elevation_above_sea <= BEACH_MAX_ELEVATION {
+            // Now check if we're actually near water by sampling terrain around us
+            let mut found_water = false;
+
+            // Check in 8 directions at various distances
+            for distance in [5.0, 10.0, 15.0, 20.0] {
+                for angle in 0..8 {
+                    let theta = (angle as f32) * std::f32::consts::PI / 4.0;
+                    let check_x = world_x + theta.cos() * distance;
+                    let check_z = world_z + theta.sin() * distance;
+
+                    // Get terrain height at this point (not recursive - uses terrain_components)
+                    let components = self.terrain_components(check_x, check_z);
+                    if components.base_height < sea_level - 1.0 {
+                        found_water = true;
+                        break;
+                    }
+                }
+                if found_water { break; }
+            }
+
+            // Only classify as beach if we found nearby water
+            if found_water {
+                return if temp_c < 0.0 {
+                    Biome::Snow
+                } else {
+                    Biome::Beach
+                };
+            }
         }
 
         let elevation = height - sea_level;
