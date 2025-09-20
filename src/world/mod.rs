@@ -219,16 +219,20 @@ impl WorldGenConfig {
             continent_frequency: 0.45 * frequency_scale,  // More continents, same physical size
 
             // SCALE-INVARIANT: Terrain detail (hills, valleys)
-            detail_frequency: 7.1 / frequency_scale,  // Higher freq = more hills of same size
+            // Target: hills should be ~50-200 blocks wide regardless of world size
+            // Since we use UV space (0-1), we need to scale frequency by world size
+            // to maintain constant physical feature size
+            detail_frequency: (planet_size as f64 / 100.0),  // Hills ~100 blocks wide
             detail_amplitude: 12.0,  // Hills always 12 blocks tall
 
             // SCALE-INVARIANT: Mountain dimensions
-            mountain_frequency: 1.8 / frequency_scale,  // More mountains, same size each
+            // Target: mountains should be ~200-800 blocks wide regardless of world size
+            mountain_frequency: (planet_size as f64 / 400.0),  // Mountains ~400 blocks wide
             mountain_height: 250.0,  // Mountains rise 250 blocks (250m) - more realistic
             mountain_threshold: 0.42,
 
             // SCALE-INVARIANT: Biome transitions
-            moisture_frequency: 2.6 / frequency_scale,  // Biome patches same physical size
+            moisture_frequency: (planet_size as f64 / 300.0),  // Biome patches ~300 blocks wide
 
             // Climate (scale-independent)
             equator_temp_c: 28.0,
@@ -240,7 +244,7 @@ impl WorldGenConfig {
             highland_bonus: 20.0,  // Highlands always 20 blocks above base
 
             // SCALE-INVARIANT: Island dimensions
-            island_frequency: 7.1 / frequency_scale,  // More islands, same size each
+            island_frequency: (planet_size as f64 / 100.0),  // Islands ~100 blocks wide
             island_threshold: 0.55,
             island_height: 30.0,  // Islands always rise 30 blocks max
             island_falloff: 2.8,
@@ -249,7 +253,7 @@ impl WorldGenConfig {
             hydrology_resolution: ((planet_size as f32 / 16.0).sqrt() as u32).max(256).min(4096),
             hydrology_rainfall: 1.4,
             hydrology_rainfall_variance: 0.4,
-            hydrology_rainfall_frequency: 0.8 / frequency_scale,  // Rain patterns scale-invariant
+            hydrology_rainfall_frequency: (planet_size as f64 / 200.0),  // Rain patterns ~200 blocks wide
             hydrology_major_river_count: major_river_count,  // Scale-dependent
             hydrology_major_river_boost: 6.0,
 
@@ -860,27 +864,20 @@ impl WorldGenerator {
             (continent_mask as f32).clamp(0.0, 1.0),
         );
 
-        let detail = self.fractal_periodic(
-            &self.detail_noise,
-            u,
-            v,
-            self.config.detail_frequency,
-            3,
-            2.5,
-            0.4,
-        ) as f32
-            * self.config.detail_amplitude
-            * land_factor;
+        // Use world-space noise for consistent hill sizes across all world sizes
+        // Multiple octaves for natural-looking terrain
+        let detail_scale = 50.0;  // Base hill size in blocks
+        let detail1 = self.world_noise(&self.detail_noise, world_x, world_z, detail_scale) as f32;
+        let detail2 = self.world_noise(&self.detail_noise, world_x + 1000.0, world_z + 1000.0, detail_scale * 2.0) as f32 * 0.5;
+        let detail3 = self.world_noise(&self.detail_noise, world_x + 2000.0, world_z + 2000.0, detail_scale * 4.0) as f32 * 0.25;
+        let detail = (detail1 + detail2 + detail3) / 1.75 * self.config.detail_amplitude * land_factor;
 
-        let mountain_raw = self.fractal_periodic(
-            &self.mountain_noise,
-            u,
-            v,
-            self.config.mountain_frequency,
-            4,
-            2.1,
-            0.5,
-        );
+        // Use world-space noise for consistent mountain sizes
+        let mountain_scale = 200.0;  // Base mountain size in blocks
+        let mountain1 = self.world_noise(&self.mountain_noise, world_x, world_z, mountain_scale);
+        let mountain2 = self.world_noise(&self.mountain_noise, world_x + 5000.0, world_z + 5000.0, mountain_scale * 2.0) * 0.5;
+        let mountain_raw = (mountain1 + mountain2) / 1.5;
+
         let mountain_mask = ((mountain_raw + 1.0) * 0.5).powf(1.8);
         let mountain_bonus = if mountain_mask as f32 > self.config.mountain_threshold {
             (mountain_mask as f32 - self.config.mountain_threshold)
@@ -1130,6 +1127,28 @@ impl WorldGenerator {
         noise.get([theta.sin(), theta.cos(), phi.sin(), phi.cos()])
     }
 
+    // Direct world coordinate noise sampling for scale-invariant features
+    fn world_noise(&self, noise: &Perlin, world_x: f32, world_z: f32, scale: f32) -> f64 {
+        // Sample noise directly at world coordinates
+        // scale determines feature size in blocks
+        let x = world_x as f64 / scale as f64;
+        let z = world_z as f64 / scale as f64;
+
+        // Use 4D noise to maintain tileable behavior across world boundaries
+        let planet_size = self.config.planet_size as f64;
+        const TAU: f64 = std::f64::consts::PI * 2.0;
+        let theta = (world_x as f64 / planet_size) * TAU;
+        let phi = (world_z as f64 / planet_size) * TAU;
+
+        // Mix world-space and periodic coordinates for best of both
+        noise.get([
+            theta.sin() + x * 0.1,
+            theta.cos() + x * 0.1,
+            phi.sin() + z * 0.1,
+            phi.cos() + z * 0.1
+        ])
+    }
+
     fn fractal_periodic(
         &self,
         noise: &Perlin,
@@ -1195,6 +1214,140 @@ impl WorldGenerator {
         base_temp - lapse + variation
     }
 
+    fn classify_beach_biome(&self, world_x: f32, world_z: f32, height: f32, temp_c: f32) -> Option<Biome> {
+        let sea_level = self.config.sea_level;
+        let elevation_above_sea = height - sea_level;
+
+        // Expanded elevation range for beaches - from slightly underwater to higher ground
+        if elevation_above_sea < -2.0 || elevation_above_sea > 12.0 {
+            return None;
+        }
+
+        // Calculate distance to deep water and terrain slope
+        let (distance_to_water, avg_slope) = self.calculate_coastal_properties(world_x, world_z, height);
+
+        // No beach if no water found within reasonable distance
+        if distance_to_water > 150.0 {
+            return None;
+        }
+
+        // Calculate maximum beach width based on slope and elevation
+        // More generous slope tolerance for beach formation
+        let slope_factor = (1.0 - avg_slope.min(0.8) / 0.8).max(0.0); // Allow steeper slopes
+        let elevation_factor = if elevation_above_sea < 1.0 {
+            1.0  // Full beach potential near sea level
+        } else if elevation_above_sea < 4.0 {
+            0.8  // Still good beach potential up to 4 blocks
+        } else {
+            (1.0 - (elevation_above_sea - 4.0) / 8.0).max(0.0)  // Gradual falloff
+        };
+
+        // Moderate beach width - up to 40 blocks in ideal conditions
+        let max_beach_width = 40.0 * slope_factor * elevation_factor;
+
+        // Lower threshold - allow beaches even on moderate slopes
+        if max_beach_width < 3.0 {
+            return None;
+        }
+
+        // Check if we're within beach zone
+        if distance_to_water <= max_beach_width {
+            // Add some randomness - not all shores become beaches
+            let beach_probability = self.calculate_beach_probability(world_x, world_z, slope_factor);
+
+            // Moderate probability threshold - selective beach formation
+            if beach_probability > 0.4 {
+                return Some(if temp_c < 0.0 {
+                    Biome::Snow
+                } else {
+                    Biome::Beach
+                });
+            }
+        }
+
+        None
+    }
+
+    fn calculate_coastal_properties(&self, world_x: f32, world_z: f32, height: f32) -> (f32, f32) {
+        let sea_level = self.config.sea_level;
+        let mut min_distance = f32::MAX;
+        let sample_count = 16;
+        let mut height_samples = Vec::new();
+
+        // Sample in expanding circles to find water and measure slope
+        for radius in [3.0, 6.0, 10.0, 20.0, 40.0, 80.0] {
+            let mut found_water_at_radius = false;
+
+            for i in 0..sample_count {
+                let angle = (i as f32) * std::f32::consts::TAU / (sample_count as f32);
+                let check_x = world_x + angle.cos() * radius;
+                let check_z = world_z + angle.sin() * radius;
+
+                let components = self.terrain_components(check_x, check_z);
+                height_samples.push(components.base_height);
+
+                // More lenient water detection - just below sea level counts
+                if components.base_height < sea_level - 0.5 {
+                    min_distance = min_distance.min(radius);
+                    found_water_at_radius = true;
+                }
+            }
+
+            // If we found water at this radius, we can stop expanding
+            if found_water_at_radius && radius >= 10.0 {
+                break;
+            }
+        }
+
+        // Calculate average slope from height variations
+        let avg_slope = if height_samples.len() > 1 {
+            let mut total_slope = 0.0;
+            let mut sample_count = 0;
+
+            for (i, &sample_height) in height_samples.iter().enumerate() {
+                let height_diff = (sample_height - height).abs();
+                let distance = if i < 16 { 3.0 } else if i < 32 { 6.0 }
+                              else if i < 48 { 10.0 } else if i < 64 { 20.0 }
+                              else if i < 80 { 40.0 } else { 80.0 };
+
+                if distance > 0.0 {
+                    total_slope += height_diff / distance;
+                    sample_count += 1;
+                }
+            }
+
+            if sample_count > 0 {
+                total_slope / sample_count as f32
+            } else {
+                0.0
+            }
+        } else {
+            0.0
+        };
+
+        (min_distance, avg_slope)
+    }
+
+    fn calculate_beach_probability(&self, world_x: f32, world_z: f32, slope_factor: f32) -> f32 {
+        // Use lower frequency noise for more continuous beaches
+        let (u, v) = self.normalized_uv(world_x, world_z);
+        let beach_noise = self.fractal_periodic(
+            &self.detail_noise, // Reuse existing noise
+            u, v,
+            self.config.detail_frequency * 0.5, // Lower frequency for larger, more continuous patches
+            2,
+            2.0,
+            0.5
+        ) as f32;
+
+        // Combine slope factor with noise - but give slope more weight
+        // Better slopes = higher base probability
+        let base_probability = slope_factor * 0.85;  // Increased from 0.7
+        let noise_influence = (beach_noise + 1.0) * 0.5 * 0.3; // Reduced from 0.6 to 0.3
+
+        (base_probability + noise_influence).clamp(0.0, 1.0)
+    }
+
     fn classify_biome_at_position(&self, world_x: f32, world_z: f32, height: f32, temp_c: f32, moisture: f32) -> Biome {
         let sea_level = self.config.sea_level;
         let deep_ocean_cutoff = sea_level - self.config.deep_ocean_depth;
@@ -1216,42 +1369,9 @@ impl WorldGenerator {
             };
         }
 
-        // SCALE-INVARIANT: Beaches require both elevation criteria AND proximity to water
-        const BEACH_MIN_ELEVATION: f32 = 0.1;   // Just above sea level
-        const BEACH_MAX_ELEVATION: f32 = 2.5;   // Maximum 2.5 blocks above sea level
-        const BEACH_CHECK_DISTANCE: f32 = 20.0;  // Check within 20 blocks for water
-
-        // Check if we're in beach elevation range
-        let elevation_above_sea = height - sea_level;
-        if elevation_above_sea >= BEACH_MIN_ELEVATION && elevation_above_sea <= BEACH_MAX_ELEVATION {
-            // Now check if we're actually near water by sampling terrain around us
-            let mut found_water = false;
-
-            // Check in 8 directions at various distances
-            for distance in [5.0, 10.0, 15.0, 20.0] {
-                for angle in 0..8 {
-                    let theta = (angle as f32) * std::f32::consts::PI / 4.0;
-                    let check_x = world_x + theta.cos() * distance;
-                    let check_z = world_z + theta.sin() * distance;
-
-                    // Get terrain height at this point (not recursive - uses terrain_components)
-                    let components = self.terrain_components(check_x, check_z);
-                    if components.base_height < sea_level - 1.0 {
-                        found_water = true;
-                        break;
-                    }
-                }
-                if found_water { break; }
-            }
-
-            // Only classify as beach if we found nearby water
-            if found_water {
-                return if temp_c < 0.0 {
-                    Biome::Snow
-                } else {
-                    Biome::Beach
-                };
-            }
+        // Check for beach biome using the new system
+        if let Some(beach_biome) = self.classify_beach_biome(world_x, world_z, height, temp_c) {
+            return beach_biome;
         }
 
         let elevation = height - sea_level;

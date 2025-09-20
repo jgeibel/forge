@@ -2289,7 +2289,10 @@ fn color_for_mode(
         MapVisualization::Biomes => {
             let height = generator.get_height(world_x, world_z);
             let biome = generator.get_biome(world_x, world_z);
-            generator.preview_color(world_x, world_z, biome, height)
+            let base_color = generator.preview_color(world_x, world_z, biome, height);
+
+            // Add height-based shading to show terrain variation
+            apply_height_shading(base_color, height, generator.config())
         }
         MapVisualization::Elevation => {
             let height = generator.get_height(world_x, world_z);
@@ -2306,6 +2309,52 @@ fn color_for_mode(
         MapVisualization::Hydrology => hydrology_color(generator, world_x, world_z),
         MapVisualization::MajorRivers => major_river_color(generator, world_x, world_z),
     }
+}
+
+fn apply_height_shading(base_color: [u8; 4], height: f32, config: &WorldGenConfig) -> [u8; 4] {
+    let sea_level = config.sea_level;
+
+    // Only apply shading to land
+    if height <= sea_level {
+        return base_color;
+    }
+
+    // Calculate elevation above sea level
+    let elevation = height - sea_level;
+    let max_elevation = config.mountain_height + config.highland_bonus;
+
+    // VERY DRAMATIC shading for clear visibility
+    // Each meter of elevation creates visible change
+    let shade_factor = if elevation < 2.0 {
+        // Very flat - dark green
+        0.5 + (elevation / 2.0) * 0.1
+    } else if elevation < 5.0 {
+        // Slight rise - medium dark
+        0.6 + (elevation - 2.0) / 3.0 * 0.15
+    } else if elevation < 10.0 {
+        // Low hills - normal brightness
+        0.75 + (elevation - 5.0) / 5.0 * 0.25
+    } else if elevation < 20.0 {
+        // Rolling hills - noticeably brighter
+        1.0 + (elevation - 10.0) / 10.0 * 0.3
+    } else if elevation < 40.0 {
+        // Higher hills - much brighter
+        1.3 + (elevation - 20.0) / 20.0 * 0.3
+    } else if elevation < 80.0 {
+        // Highlands - very bright
+        1.6 + (elevation - 40.0) / 40.0 * 0.2
+    } else {
+        // Mountains - almost white at peaks
+        let mountain_factor = ((elevation - 80.0) / (max_elevation - 80.0)).clamp(0.0, 1.0);
+        1.8 + mountain_factor * 0.5
+    };
+
+    // Apply the shading with MUCH stronger effect
+    let r = (base_color[0] as f32 * shade_factor).min(255.0) as u8;
+    let g = (base_color[1] as f32 * shade_factor).min(255.0) as u8;
+    let b = (base_color[2] as f32 * shade_factor).min(255.0) as u8;
+
+    [r, g, b, base_color[3]]
 }
 
 fn elevation_color(height: f32, config: &WorldGenConfig) -> [u8; 4] {
