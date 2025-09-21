@@ -1,5 +1,5 @@
 use forge::planet::{PlanetConfig, PlanetSize};
-use forge::world::{WorldGenerator, WorldGenConfig};
+use forge::world::{WorldGenConfig, WorldGenerator};
 
 fn main() {
     println!("Analyzing Terrain Heights for Huge World\n");
@@ -50,15 +50,21 @@ fn main() {
     if !land_heights.is_empty() {
         println!("\nLand Elevation Statistics (above sea level):");
         println!("  Min elevation: {:.1} blocks", land_heights[0]);
-        println!("  Max elevation: {:.1} blocks", land_heights[land_heights.len() - 1]);
-        println!("  Median elevation: {:.1} blocks", land_heights[land_heights.len() / 2]);
+        println!(
+            "  Max elevation: {:.1} blocks",
+            land_heights[land_heights.len() - 1]
+        );
+        println!(
+            "  Median elevation: {:.1} blocks",
+            land_heights[land_heights.len() / 2]
+        );
 
         // Count different elevation ranges
-        let mut rolling_hills = 0;  // 5-20 blocks above sea
-        let mut highlands = 0;      // 20-50 blocks above sea
-        let mut foothills = 0;      // 50-100 blocks above sea
-        let mut mountains = 0;      // 100-200 blocks above sea
-        let mut peaks = 0;          // 200+ blocks above sea
+        let mut rolling_hills = 0; // 5-20 blocks above sea
+        let mut highlands = 0; // 20-50 blocks above sea
+        let mut foothills = 0; // 50-100 blocks above sea
+        let mut mountains = 0; // 100-200 blocks above sea
+        let mut peaks = 0; // 200+ blocks above sea
 
         for h in &land_heights {
             if *h < 5.0 {
@@ -78,11 +84,26 @@ fn main() {
 
         let total_land = land_heights.len() as f32;
         println!("\nElevation Distribution (% of land):");
-        println!("  Rolling hills (5-20 blocks): {:.1}%", (rolling_hills as f32 / total_land) * 100.0);
-        println!("  Highlands (20-50 blocks): {:.1}%", (highlands as f32 / total_land) * 100.0);
-        println!("  Foothills (50-100 blocks): {:.1}%", (foothills as f32 / total_land) * 100.0);
-        println!("  Mountains (100-200 blocks): {:.1}%", (mountains as f32 / total_land) * 100.0);
-        println!("  Peaks (200+ blocks): {:.1}%", (peaks as f32 / total_land) * 100.0);
+        println!(
+            "  Rolling hills (5-20 blocks): {:.1}%",
+            (rolling_hills as f32 / total_land) * 100.0
+        );
+        println!(
+            "  Highlands (20-50 blocks): {:.1}%",
+            (highlands as f32 / total_land) * 100.0
+        );
+        println!(
+            "  Foothills (50-100 blocks): {:.1}%",
+            (foothills as f32 / total_land) * 100.0
+        );
+        println!(
+            "  Mountains (100-200 blocks): {:.1}%",
+            (mountains as f32 / total_land) * 100.0
+        );
+        println!(
+            "  Peaks (200+ blocks): {:.1}%",
+            (peaks as f32 / total_land) * 100.0
+        );
     }
 
     // Sample a cross-section to visualize terrain profile
@@ -100,7 +121,7 @@ fn main() {
         // Create ASCII visualization
         for j in 0..20 {
             if j == ((sea_level - min_height) / (max_height - min_height) * 20.0) as usize {
-                profile.push('~');  // Sea level
+                profile.push('~'); // Sea level
             } else if j <= normalized {
                 profile.push('#');
             } else {

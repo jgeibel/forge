@@ -1,22 +1,22 @@
 use std::fs;
 use std::path::Path;
 
-use bevy::prelude::*;
 use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::input::ButtonInput;
+use bevy::prelude::*;
 use bevy::render::camera::RenderTarget;
 use bevy::render::render_asset::RenderAssetUsages;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
-use bevy::render::view::RenderLayers;
 use bevy::render::texture::ImageSampler;
+use bevy::render::view::RenderLayers;
 use bevy::ui::{Display, TargetCamera};
 use bevy::window::{PresentMode, PrimaryWindow, WindowRef, WindowResolution};
 
 use forge::planet::{PlanetConfig, PlanetSize};
 use forge::world::{Biome, WorldGenConfig, WorldGenerator};
 
-const MAP_WIDTH: u32 = 512;  // Lower initial resolution for faster rendering
-const MAP_HEIGHT: u32 = 256;  // Lower initial resolution for faster rendering
+const MAP_WIDTH: u32 = 512; // Lower initial resolution for faster rendering
+const MAP_HEIGHT: u32 = 256; // Lower initial resolution for faster rendering
 const DEFAULTS_PATH: &str = "docs/world_builder_defaults.json";
 
 fn main() {
@@ -24,7 +24,7 @@ fn main() {
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "World Builder - Map".into(),
-                resolution: WindowResolution::new(1024.0, 512.0),  // 2x the map resolution for comfortable viewing
+                resolution: WindowResolution::new(1024.0, 512.0), // 2x the map resolution for comfortable viewing
                 present_mode: PresentMode::AutoVsync,
                 resizable: true,
                 ..default()
@@ -106,7 +106,7 @@ struct WorldBuilderState {
     show_popup: bool,
     popup_world_pos: Option<(f32, f32)>,
     // Detail inspection
-    detail_center: Option<Vec2>,  // Center of the detail view in world coordinates
+    detail_center: Option<Vec2>, // Center of the detail view in world coordinates
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -295,6 +295,12 @@ enum ParameterField {
     ContinentFrequency,
     ContinentThreshold,
     MountainHeight,
+    MountainRangeCount,
+    MountainRangeWidth,
+    MountainRangeStrength,
+    MountainRangeSpurChance,
+    MountainRangeSpurStrength,
+    MountainRangeRoughness,
     MoistureFrequency,
     TemperatureVariation,
     HighlandBonus,
@@ -325,6 +331,12 @@ impl ParameterField {
             ParameterField::ContinentFrequency => "Continent Frequency",
             ParameterField::ContinentThreshold => "Continent Threshold",
             ParameterField::MountainHeight => "Mountain Height",
+            ParameterField::MountainRangeCount => "Range Count",
+            ParameterField::MountainRangeWidth => "Range Width",
+            ParameterField::MountainRangeStrength => "Range Strength",
+            ParameterField::MountainRangeSpurChance => "Spur Chance",
+            ParameterField::MountainRangeSpurStrength => "Spur Strength",
+            ParameterField::MountainRangeRoughness => "Roughness",
             ParameterField::MoistureFrequency => "Moisture Frequency",
             ParameterField::TemperatureVariation => "Temperature Variation",
             ParameterField::HighlandBonus => "Highland Bonus",
@@ -367,6 +379,31 @@ impl ParameterField {
             }
             ParameterField::MountainHeight => {
                 config.mountain_height = (config.mountain_height + delta).clamp(50.0, 500.0);
+            }
+            ParameterField::MountainRangeCount => {
+                let updated =
+                    (config.mountain_range_count as i32 + delta.round() as i32).clamp(0, 80);
+                config.mountain_range_count = updated as u32;
+            }
+            ParameterField::MountainRangeWidth => {
+                config.mountain_range_width =
+                    (config.mountain_range_width + delta).clamp(40.0, 800.0);
+            }
+            ParameterField::MountainRangeStrength => {
+                config.mountain_range_strength =
+                    (config.mountain_range_strength + delta).clamp(0.0, 5.0);
+            }
+            ParameterField::MountainRangeSpurChance => {
+                config.mountain_range_spur_chance =
+                    (config.mountain_range_spur_chance + delta).clamp(0.0, 1.0);
+            }
+            ParameterField::MountainRangeSpurStrength => {
+                config.mountain_range_spur_strength =
+                    (config.mountain_range_spur_strength + delta).clamp(0.0, 2.0);
+            }
+            ParameterField::MountainRangeRoughness => {
+                config.mountain_range_roughness =
+                    (config.mountain_range_roughness + delta).clamp(0.0, 2.5);
             }
             ParameterField::MoistureFrequency => {
                 let freq = (config.moisture_frequency + delta as f64).clamp(0.1, 6.0);
@@ -422,15 +459,13 @@ impl ParameterField {
                     (config.river_flow_threshold + delta).clamp(10.0, 5000.0);
             }
             ParameterField::RiverDepthScale => {
-                config.river_depth_scale =
-                    (config.river_depth_scale + delta).clamp(0.0, 1.0);
+                config.river_depth_scale = (config.river_depth_scale + delta).clamp(0.0, 1.0);
             }
             ParameterField::RiverMaxDepth => {
                 config.river_max_depth = (config.river_max_depth + delta).clamp(0.0, 30.0);
             }
             ParameterField::RiverSurfaceRatio => {
-                config.river_surface_ratio =
-                    (config.river_surface_ratio + delta).clamp(0.1, 1.0);
+                config.river_surface_ratio = (config.river_surface_ratio + delta).clamp(0.1, 1.0);
             }
             ParameterField::LakeFlowThreshold => {
                 config.lake_flow_threshold =
@@ -452,6 +487,12 @@ impl ParameterField {
             ParameterField::ContinentFrequency => config.continent_frequency,
             ParameterField::ContinentThreshold => config.continent_threshold as f64,
             ParameterField::MountainHeight => config.mountain_height as f64,
+            ParameterField::MountainRangeCount => config.mountain_range_count as f64,
+            ParameterField::MountainRangeWidth => config.mountain_range_width as f64,
+            ParameterField::MountainRangeStrength => config.mountain_range_strength as f64,
+            ParameterField::MountainRangeSpurChance => config.mountain_range_spur_chance as f64,
+            ParameterField::MountainRangeSpurStrength => config.mountain_range_spur_strength as f64,
+            ParameterField::MountainRangeRoughness => config.mountain_range_roughness as f64,
             ParameterField::MoistureFrequency => config.moisture_frequency,
             ParameterField::TemperatureVariation => config.temperature_variation as f64,
             ParameterField::HighlandBonus => config.highland_bonus as f64,
@@ -482,6 +523,22 @@ impl ParameterField {
             ParameterField::ContinentFrequency => format!("{:.2}", config.continent_frequency),
             ParameterField::ContinentThreshold => format!("{:.2}", config.continent_threshold),
             ParameterField::MountainHeight => format!("{:.1}", config.mountain_height),
+            ParameterField::MountainRangeCount => format!("{}", config.mountain_range_count),
+            ParameterField::MountainRangeWidth => {
+                format!("{:.0}", config.mountain_range_width)
+            }
+            ParameterField::MountainRangeStrength => {
+                format!("{:.2}", config.mountain_range_strength)
+            }
+            ParameterField::MountainRangeSpurChance => {
+                format!("{:.2}", config.mountain_range_spur_chance)
+            }
+            ParameterField::MountainRangeSpurStrength => {
+                format!("{:.2}", config.mountain_range_spur_strength)
+            }
+            ParameterField::MountainRangeRoughness => {
+                format!("{:.2}", config.mountain_range_roughness)
+            }
             ParameterField::MoistureFrequency => format!("{:.2}", config.moisture_frequency),
             ParameterField::TemperatureVariation => format!("{:.1}", config.temperature_variation),
             ParameterField::HighlandBonus => format!("{:.1}", config.highland_bonus),
@@ -524,6 +581,12 @@ impl ParameterField {
             ParameterField::ContinentCount => 0.5,
             ParameterField::IslandThreshold => 0.01,
             ParameterField::IslandFalloff => 0.01,
+            ParameterField::MountainRangeCount => 0.5,
+            ParameterField::MountainRangeWidth => 0.1,
+            ParameterField::MountainRangeStrength => 0.001,
+            ParameterField::MountainRangeSpurChance => 0.001,
+            ParameterField::MountainRangeSpurStrength => 0.001,
+            ParameterField::MountainRangeRoughness => 0.001,
             ParameterField::HydrologyResolution => 1.0,
             ParameterField::HydrologyRainfall => 0.001,
             ParameterField::HydrologyRainfallVariance => 0.001,
@@ -548,6 +611,12 @@ impl ParameterField {
             ParameterField::ContinentFrequency => "Low-frequency noise controlling continent placement; higher values create more variation per unit area.",
             ParameterField::ContinentThreshold => "Cutoff for land vs ocean; lower thresholds produce more land and wider continents.",
             ParameterField::MountainHeight => "Peak height above terrain in blocks (meters); realistic mountain elevation.",
+            ParameterField::MountainRangeCount => "Number of long mountain belts seeded across the world; larger planets can support more distinct ranges.",
+            ParameterField::MountainRangeWidth => "Average width of a mountain belt in blocks (meters); controls how broad each range appears on the map.",
+            ParameterField::MountainRangeStrength => "Extra elevation multiplier applied along the belt centerline; higher values exaggerate relief inside a range.",
+            ParameterField::MountainRangeSpurChance => "Probability that a ridge segment sprouts secondary arms; raising it increases branching and cross-range structure.",
+            ParameterField::MountainRangeSpurStrength => "Relative elevation boost applied to spur ridges compared to the main belt.",
+            ParameterField::MountainRangeRoughness => "Noise amplitude used along the belt to create bulges, gaps, and braided crests.",
             ParameterField::MoistureFrequency => "Frequency of the moisture noise used for biomes; higher values add more variation.",
             ParameterField::TemperatureVariation => "Amplitude of the temperature noise layered over the latitude gradient.",
             ParameterField::HighlandBonus => "Plateau elevation in blocks (meters); raises continental interiors.",
@@ -578,6 +647,12 @@ impl ParameterField {
             ParameterField::ContinentFrequency => "0.1 - 4.0",
             ParameterField::ContinentThreshold => "0.05 - 0.60",
             ParameterField::MountainHeight => "50 - 500 blocks (meters)",
+            ParameterField::MountainRangeCount => "0 - 60 ranges",
+            ParameterField::MountainRangeWidth => "40 - 800 blocks (meters)",
+            ParameterField::MountainRangeStrength => "0.0 - 3.0",
+            ParameterField::MountainRangeSpurChance => "0.0 - 1.0",
+            ParameterField::MountainRangeSpurStrength => "0.0 - 1.5",
+            ParameterField::MountainRangeRoughness => "0.0 - 2.0",
             ParameterField::MoistureFrequency => "0.1 - 6.0",
             ParameterField::TemperatureVariation => "0 - 20",
             ParameterField::HighlandBonus => "0 - 50 blocks (meters)",
@@ -608,6 +683,12 @@ const TERRAIN_FIELDS: &[ParameterField] = &[
     ParameterField::ContinentFrequency,
     ParameterField::ContinentThreshold,
     ParameterField::MountainHeight,
+    ParameterField::MountainRangeCount,
+    ParameterField::MountainRangeWidth,
+    ParameterField::MountainRangeStrength,
+    ParameterField::MountainRangeSpurChance,
+    ParameterField::MountainRangeSpurStrength,
+    ParameterField::MountainRangeRoughness,
     ParameterField::MoistureFrequency,
     ParameterField::TemperatureVariation,
     ParameterField::HighlandBonus,
@@ -676,7 +757,7 @@ fn setup(
         active_tab: ParameterTab::Terrain,
         repaint_requested: true,
         selection: None,
-        camera_zoom: 2.0,  // Start zoomed in to fill the window
+        camera_zoom: 2.0, // Start zoomed in to fill the window
         camera_translation: Vec2::ZERO,
         is_panning: false,
         last_mouse_position: None,
@@ -702,19 +783,19 @@ fn setup(
 
     commands.insert_resource(MapTextures {
         map: map_handle.clone(),
-        detail: map_handle.clone(),  // Not used anymore but kept for compatibility
+        detail: map_handle.clone(), // Not used anymore but kept for compatibility
     });
 
     // Camera for the map (world space) - only spawn if targeting main window
     let mut camera_bundle = Camera2dBundle {
         camera: Camera {
             clear_color: ClearColorConfig::Custom(Color::srgb(0.02, 0.02, 0.03)),
-            order: 0,  // Main camera
+            order: 0, // Main camera
             ..default()
         },
         ..default()
     };
-    camera_bundle.projection.scale = 0.5;  // Start zoomed in to fill window
+    camera_bundle.projection.scale = 0.5; // Start zoomed in to fill window
 
     commands.spawn((
         camera_bundle,
@@ -739,7 +820,7 @@ fn setup(
                 color: Color::srgb(1.0, 0.3, 0.2),
                 ..default()
             },
-            transform: Transform::from_xyz(0.0, 0.0, 10.0),  // Above the map
+            transform: Transform::from_xyz(0.0, 0.0, 10.0), // Above the map
             visibility: Visibility::Hidden,
             ..default()
         },
@@ -747,98 +828,99 @@ fn setup(
     ));
 
     // Location popup (UI element that follows world space)
-    commands.spawn((
-        NodeBundle {
+    commands
+        .spawn((
+            NodeBundle {
+                style: Style {
+                    position_type: PositionType::Absolute,
+                    padding: UiRect::all(Val::Px(8.0)),
+                    ..default()
+                },
+                background_color: BackgroundColor(Color::srgba(0.1, 0.1, 0.1, 0.9)),
+                visibility: Visibility::Hidden,
+                z_index: ZIndex::Global(1000), // Above everything
+                ..default()
+            },
+            LocationPopup,
+        ))
+        .with_children(|parent| {
+            parent.spawn((
+                TextBundle::from_section(
+                    "",
+                    TextStyle {
+                        font_size: 14.0,
+                        color: Color::WHITE,
+                        ..default() // Use Bevy's default font
+                    },
+                ),
+                LocationPopupText,
+            ));
+        });
+
+    // Visualization buttons panel at top of map
+    commands
+        .spawn(NodeBundle {
             style: Style {
                 position_type: PositionType::Absolute,
+                top: Val::Px(10.0),
+                left: Val::Px(10.0),
+                flex_direction: FlexDirection::Row,
+                column_gap: Val::Px(4.0),
                 padding: UiRect::all(Val::Px(8.0)),
                 ..default()
             },
-            background_color: BackgroundColor(Color::srgba(0.1, 0.1, 0.1, 0.9)),
-            visibility: Visibility::Hidden,
-            z_index: ZIndex::Global(1000),  // Above everything
+            background_color: BackgroundColor(Color::srgba(0.08, 0.09, 0.12, 0.85)),
+            z_index: ZIndex::Global(100),
             ..default()
-        },
-        LocationPopup,
-    ))
-    .with_children(|parent| {
-        parent.spawn((
-            TextBundle::from_section(
-                "",
-                TextStyle {
-                    font_size: 14.0,
-                    color: Color::WHITE,
-                    ..default()  // Use Bevy's default font
-                },
-            ),
-            LocationPopupText,
-        ));
-    });
-
-    // Visualization buttons panel at top of map
-    commands.spawn(NodeBundle {
-        style: Style {
-            position_type: PositionType::Absolute,
-            top: Val::Px(10.0),
-            left: Val::Px(10.0),
-            flex_direction: FlexDirection::Row,
-            column_gap: Val::Px(4.0),
-            padding: UiRect::all(Val::Px(8.0)),
-            ..default()
-        },
-        background_color: BackgroundColor(Color::srgba(0.08, 0.09, 0.12, 0.85)),
-        z_index: ZIndex::Global(100),
-        ..default()
-    })
-    .with_children(|parent| {
-        for mode in MapVisualization::ALL {
-            parent.spawn(ButtonBundle {
-                style: Style {
-                    width: Val::Px(90.0),
-                    height: Val::Px(28.0),
-                    justify_content: JustifyContent::Center,
-                    align_items: AlignItems::Center,
-                    border: UiRect::all(Val::Px(1.0)),
-                    ..default()
-                },
-                background_color: materials.normal,
-                border_color: BorderColor(Color::srgba(0.25, 0.28, 0.35, 0.6)),
-                ..default()
-            })
-            .insert(VisualizationButton { mode })
-            .with_children(|button| {
-                button.spawn(TextBundle::from_section(
-                    mode.label(),
-                    TextStyle {
-                        font_size: 12.0,
-                        color: Color::srgb(0.9, 0.93, 1.0),
+        })
+        .with_children(|parent| {
+            for mode in MapVisualization::ALL {
+                parent
+                    .spawn(ButtonBundle {
+                        style: Style {
+                            width: Val::Px(90.0),
+                            height: Val::Px(28.0),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            border: UiRect::all(Val::Px(1.0)),
+                            ..default()
+                        },
+                        background_color: materials.normal,
+                        border_color: BorderColor(Color::srgba(0.25, 0.28, 0.35, 0.6)),
                         ..default()
-                    },
-                ));
-            });
-        }
-    });
+                    })
+                    .insert(VisualizationButton { mode })
+                    .with_children(|button| {
+                        button.spawn(TextBundle::from_section(
+                            mode.label(),
+                            TextStyle {
+                                font_size: 12.0,
+                                color: Color::srgb(0.9, 0.93, 1.0),
+                                ..default()
+                            },
+                        ));
+                    });
+            }
+        });
 
     // Status text for detail inspection
-    commands.spawn(
-        TextBundle {
-            style: Style {
-                position_type: PositionType::Absolute,
-                bottom: Val::Px(10.0),
-                left: Val::Px(10.0),
-                ..default()
-            },
-            text: Text::from_section(
-                "Left-click to inspect blocks | Middle-click to pan | Right-click for info",
-                TextStyle {
-                    font_size: 14.0,
-                    color: Color::srgba(0.9, 0.9, 0.9, 0.8),
-                    ..default()
-                },
-            ),
+    commands.spawn(TextBundle {
+        style: Style {
+            position_type: PositionType::Absolute,
+            bottom: Val::Px(10.0),
+            left: Val::Px(10.0),
             ..default()
         },
-    );
+        text: Text::from_section(
+            "Left-click to inspect blocks | Middle-click to pan | Right-click for info",
+            TextStyle {
+                font_size: 14.0,
+                color: Color::srgba(0.9, 0.9, 0.9, 0.8),
+                ..default()
+            },
+        ),
+        ..default()
+    });
 
     let control_window = commands
         .spawn(Window {
@@ -915,69 +997,72 @@ fn build_control_panel(
                 ));
 
                 // Action buttons in header
-                header.spawn(NodeBundle {
-                    style: Style {
-                        flex_direction: FlexDirection::Row,
-                        column_gap: Val::Px(12.0),
-                        ..default()
-                    },
-                    ..default()
-                })
-                .with_children(|buttons| {
-                    buttons.spawn(ButtonBundle {
+                header
+                    .spawn(NodeBundle {
                         style: Style {
-                            width: Val::Px(150.0),
-                            height: Val::Px(38.0),
-                            justify_content: JustifyContent::Center,
-                            align_items: AlignItems::Center,
-                            border: UiRect::all(Val::Px(1.0)),
+                            flex_direction: FlexDirection::Row,
+                            column_gap: Val::Px(12.0),
                             ..default()
                         },
-                        background_color: BackgroundColor(Color::srgba(
-                            0.15, 0.25, 0.4, 0.95,
-                        )),
-                        border_color: BorderColor(Color::srgba(0.35, 0.45, 0.6, 0.8)),
                         ..default()
                     })
-                    .insert(RegenerateButton)
-                    .with_children(|b| {
-                        b.spawn(TextBundle::from_section(
-                            "GENERATE WORLD",
-                            TextStyle {
-                                font_size: 14.0,
-                                color: Color::srgb(0.95, 0.97, 1.0),
+                    .with_children(|buttons| {
+                        buttons
+                            .spawn(ButtonBundle {
+                                style: Style {
+                                    width: Val::Px(150.0),
+                                    height: Val::Px(38.0),
+                                    justify_content: JustifyContent::Center,
+                                    align_items: AlignItems::Center,
+                                    border: UiRect::all(Val::Px(1.0)),
+                                    ..default()
+                                },
+                                background_color: BackgroundColor(Color::srgba(
+                                    0.15, 0.25, 0.4, 0.95,
+                                )),
+                                border_color: BorderColor(Color::srgba(0.35, 0.45, 0.6, 0.8)),
                                 ..default()
-                            },
-                        ));
-                    });
+                            })
+                            .insert(RegenerateButton)
+                            .with_children(|b| {
+                                b.spawn(TextBundle::from_section(
+                                    "GENERATE WORLD",
+                                    TextStyle {
+                                        font_size: 14.0,
+                                        color: Color::srgb(0.95, 0.97, 1.0),
+                                        ..default()
+                                    },
+                                ));
+                            });
 
-                    buttons.spawn(ButtonBundle {
-                        style: Style {
-                            width: Val::Px(140.0),
-                            height: Val::Px(38.0),
-                            justify_content: JustifyContent::Center,
-                            align_items: AlignItems::Center,
-                            border: UiRect::all(Val::Px(1.0)),
-                            ..default()
-                        },
-                        background_color: BackgroundColor(Color::srgba(
-                            0.12, 0.18, 0.25, 0.95,
-                        )),
-                        border_color: BorderColor(Color::srgba(0.25, 0.35, 0.45, 0.8)),
-                        ..default()
-                    })
-                    .insert(SaveDefaultsButton)
-                    .with_children(|b| {
-                        b.spawn(TextBundle::from_section(
-                            "SAVE DEFAULTS",
-                            TextStyle {
-                                font_size: 14.0,
-                                color: Color::srgb(0.9, 0.93, 0.98),
+                        buttons
+                            .spawn(ButtonBundle {
+                                style: Style {
+                                    width: Val::Px(140.0),
+                                    height: Val::Px(38.0),
+                                    justify_content: JustifyContent::Center,
+                                    align_items: AlignItems::Center,
+                                    border: UiRect::all(Val::Px(1.0)),
+                                    ..default()
+                                },
+                                background_color: BackgroundColor(Color::srgba(
+                                    0.12, 0.18, 0.25, 0.95,
+                                )),
+                                border_color: BorderColor(Color::srgba(0.25, 0.35, 0.45, 0.8)),
                                 ..default()
-                            },
-                        ));
+                            })
+                            .insert(SaveDefaultsButton)
+                            .with_children(|b| {
+                                b.spawn(TextBundle::from_section(
+                                    "SAVE DEFAULTS",
+                                    TextStyle {
+                                        font_size: 14.0,
+                                        color: Color::srgb(0.9, 0.93, 0.98),
+                                        ..default()
+                                    },
+                                ));
+                            });
                     });
-                });
             });
 
         // Main content area - World Parameters
@@ -995,183 +1080,177 @@ fn build_control_panel(
                 // World size section
                 main_content
                     .spawn(NodeBundle {
-                                style: Style {
-                                    flex_direction: FlexDirection::Column,
-                                    row_gap: Val::Px(10.0),
-                                    padding: UiRect::all(Val::Px(16.0)),
-                                    border: UiRect::all(Val::Px(1.0)),
-                                    ..default()
-                                },
-                                background_color: BackgroundColor(Color::srgba(
-                                    0.08, 0.09, 0.12, 0.5,
-                                )),
-                                border_color: BorderColor(Color::srgba(0.2, 0.22, 0.28, 0.5)),
+                        style: Style {
+                            flex_direction: FlexDirection::Column,
+                            row_gap: Val::Px(10.0),
+                            padding: UiRect::all(Val::Px(16.0)),
+                            border: UiRect::all(Val::Px(1.0)),
+                            ..default()
+                        },
+                        background_color: BackgroundColor(Color::srgba(0.08, 0.09, 0.12, 0.5)),
+                        border_color: BorderColor(Color::srgba(0.2, 0.22, 0.28, 0.5)),
+                        ..default()
+                    })
+                    .with_children(|size_section| {
+                        size_section.spawn(TextBundle::from_section(
+                            "WORLD SIZE",
+                            TextStyle {
+                                font_size: 14.0,
+                                color: Color::srgba(0.65, 0.7, 0.8, 0.9),
                                 ..default()
-                            })
-                            .with_children(|size_section| {
-                                size_section.spawn(TextBundle::from_section(
-                                    "WORLD SIZE",
-                                    TextStyle {
-                                        font_size: 14.0,
-                                        color: Color::srgba(0.65, 0.7, 0.8, 0.9),
-                                        ..default()
-                                    },
-                                ));
+                            },
+                        ));
 
-                                size_section
-                                    .spawn(NodeBundle {
-                                        style: Style {
-                                            flex_direction: FlexDirection::Row,
-                                            align_items: AlignItems::Center,
-                                            column_gap: Val::Px(8.0),
-                                            ..default()
-                                        },
-                                        ..default()
-                                    })
-                                    .with_children(|row| {
-                                        row.spawn(button_bundle(materials, Vec2::new(32.0, 28.0)))
-                                            .insert(PlanetSizeButton { delta: -1 })
-                                            .with_children(|button| {
-                                                button.spawn(TextBundle::from_section(
-                                                    "<",
-                                                    TextStyle {
-                                                        font_size: 18.0,
-                                                        color: Color::srgb(0.9, 0.93, 1.0),
-                                                        ..default()
-                                                    },
-                                                ));
-                                            });
-                                        let mut bundle = TextBundle::from_section(
-                                            "",
-                                            TextStyle {
-                                                font_size: 15.0,
-                                                color: Color::srgb(0.9, 0.92, 1.0),
-                                                ..default()
-                                            },
-                                        );
-                                        bundle.text.justify = JustifyText::Center;
-                                        bundle.style = Style {
-                                            min_width: Val::Px(280.0),
-                                            justify_content: JustifyContent::Center,
-                                            ..default()
-                                        };
-                                        row.spawn(bundle).insert(WorldSizeLabel);
-
-                                        row.spawn(button_bundle(materials, Vec2::new(32.0, 28.0)))
-                                            .insert(PlanetSizeButton { delta: 1 })
-                                            .with_children(|button| {
-                                                button.spawn(TextBundle::from_section(
-                                                    ">",
-                                                    TextStyle {
-                                                        font_size: 18.0,
-                                                        color: Color::srgb(0.9, 0.93, 1.0),
-                                                        ..default()
-                                                    },
-                                                ));
-                                            });
-                                    });
-                            });
-
-                // Parameter tabs
-                main_content
-                    .spawn(NodeBundle {
+                        size_section
+                            .spawn(NodeBundle {
                                 style: Style {
                                     flex_direction: FlexDirection::Row,
-                                    column_gap: Val::Px(4.0),
-                                    padding: UiRect::vertical(Val::Px(8.0)),
+                                    align_items: AlignItems::Center,
+                                    column_gap: Val::Px(8.0),
                                     ..default()
                                 },
                                 ..default()
                             })
                             .with_children(|row| {
-                                for tab in ParameterTab::ALL {
-                                    row.spawn(ButtonBundle {
-                                        style: Style {
-                                            width: Val::Px(120.0),
-                                            height: Val::Px(36.0),
-                                            justify_content: JustifyContent::Center,
-                                            align_items: AlignItems::Center,
-                                            border: UiRect::all(Val::Px(1.0)),
-                                            ..default()
-                                        },
-                                        background_color: materials.tab_normal,
-                                        border_color: BorderColor(Color::srgba(
-                                            0.25, 0.28, 0.35, 0.6,
-                                        )),
-                                        ..default()
-                                    })
-                                    .insert(TabButton { tab })
+                                row.spawn(button_bundle(materials, Vec2::new(32.0, 28.0)))
+                                    .insert(PlanetSizeButton { delta: -1 })
                                     .with_children(|button| {
                                         button.spawn(TextBundle::from_section(
-                                            tab.label().to_uppercase(),
+                                            "<",
                                             TextStyle {
-                                                font_size: 13.0,
-                                                color: Color::srgb(0.85, 0.88, 0.95),
+                                                font_size: 18.0,
+                                                color: Color::srgb(0.9, 0.93, 1.0),
                                                 ..default()
                                             },
                                         ));
                                     });
-                                }
+                                let mut bundle = TextBundle::from_section(
+                                    "",
+                                    TextStyle {
+                                        font_size: 15.0,
+                                        color: Color::srgb(0.9, 0.92, 1.0),
+                                        ..default()
+                                    },
+                                );
+                                bundle.text.justify = JustifyText::Center;
+                                bundle.style = Style {
+                                    min_width: Val::Px(280.0),
+                                    justify_content: JustifyContent::Center,
+                                    ..default()
+                                };
+                                row.spawn(bundle).insert(WorldSizeLabel);
+
+                                row.spawn(button_bundle(materials, Vec2::new(32.0, 28.0)))
+                                    .insert(PlanetSizeButton { delta: 1 })
+                                    .with_children(|button| {
+                                        button.spawn(TextBundle::from_section(
+                                            ">",
+                                            TextStyle {
+                                                font_size: 18.0,
+                                                color: Color::srgb(0.9, 0.93, 1.0),
+                                                ..default()
+                                            },
+                                        ));
+                                    });
                             });
+                    });
+
+                // Parameter tabs
+                main_content
+                    .spawn(NodeBundle {
+                        style: Style {
+                            flex_direction: FlexDirection::Row,
+                            column_gap: Val::Px(4.0),
+                            padding: UiRect::vertical(Val::Px(8.0)),
+                            ..default()
+                        },
+                        ..default()
+                    })
+                    .with_children(|row| {
+                        for tab in ParameterTab::ALL {
+                            row.spawn(ButtonBundle {
+                                style: Style {
+                                    width: Val::Px(120.0),
+                                    height: Val::Px(36.0),
+                                    justify_content: JustifyContent::Center,
+                                    align_items: AlignItems::Center,
+                                    border: UiRect::all(Val::Px(1.0)),
+                                    ..default()
+                                },
+                                background_color: materials.tab_normal,
+                                border_color: BorderColor(Color::srgba(0.25, 0.28, 0.35, 0.6)),
+                                ..default()
+                            })
+                            .insert(TabButton { tab })
+                            .with_children(|button| {
+                                button.spawn(TextBundle::from_section(
+                                    tab.label().to_uppercase(),
+                                    TextStyle {
+                                        font_size: 13.0,
+                                        color: Color::srgb(0.85, 0.88, 0.95),
+                                        ..default()
+                                    },
+                                ));
+                            });
+                        }
+                    });
 
                 // Parameter panels with scrollable container
                 main_content
                     .spawn(NodeBundle {
+                        style: Style {
+                            flex_direction: FlexDirection::Column,
+                            border: UiRect::all(Val::Px(1.0)),
+                            min_height: Val::Px(400.0),
+                            max_height: Val::Px(500.0),
+                            overflow: Overflow::clip_y(),
+                            ..default()
+                        },
+                        background_color: BackgroundColor(Color::srgba(0.08, 0.09, 0.12, 0.5)),
+                        border_color: BorderColor(Color::srgba(0.2, 0.22, 0.28, 0.5)),
+                        ..default()
+                    })
+                    .with_children(|container| {
+                        // Scrollable content area
+                        container
+                            .spawn(NodeBundle {
                                 style: Style {
                                     flex_direction: FlexDirection::Column,
-                                    border: UiRect::all(Val::Px(1.0)),
-                                    min_height: Val::Px(400.0),
-                                    max_height: Val::Px(500.0),
-                                    overflow: Overflow::clip_y(),
+                                    row_gap: Val::Px(8.0),
+                                    padding: UiRect::all(Val::Px(16.0)),
+                                    position_type: PositionType::Relative,
+                                    top: Val::Px(0.0),
                                     ..default()
                                 },
-                                background_color: BackgroundColor(Color::srgba(
-                                    0.08, 0.09, 0.12, 0.5,
-                                )),
-                                border_color: BorderColor(Color::srgba(0.2, 0.22, 0.28, 0.5)),
                                 ..default()
                             })
-                            .with_children(|container| {
-                                // Scrollable content area
-                                container
-                                    .spawn(NodeBundle {
-                                        style: Style {
-                                            flex_direction: FlexDirection::Column,
-                                            row_gap: Val::Px(8.0),
-                                            padding: UiRect::all(Val::Px(16.0)),
-                                            position_type: PositionType::Relative,
-                                            top: Val::Px(0.0),
-                                            ..default()
-                                        },
-                                        ..default()
-                                    })
-                                    .insert(ScrollContent)
-                                    .with_children(|sections| {
-                                        spawn_tab_section(
-                                            sections,
-                                            materials,
-                                            ParameterTab::Terrain,
-                                            TERRAIN_FIELDS,
-                                            ParameterTab::Terrain,
-                                        );
-                                        spawn_tab_section(
-                                            sections,
-                                            materials,
-                                            ParameterTab::Islands,
-                                            ISLAND_FIELDS,
-                                            ParameterTab::Terrain,
-                                        );
-                                        spawn_tab_section(
-                                            sections,
-                                            materials,
-                                            ParameterTab::Hydrology,
-                                            HYDROLOGY_FIELDS,
-                                            ParameterTab::Terrain,
-                                        );
-                                    });
+                            .insert(ScrollContent)
+                            .with_children(|sections| {
+                                spawn_tab_section(
+                                    sections,
+                                    materials,
+                                    ParameterTab::Terrain,
+                                    TERRAIN_FIELDS,
+                                    ParameterTab::Terrain,
+                                );
+                                spawn_tab_section(
+                                    sections,
+                                    materials,
+                                    ParameterTab::Islands,
+                                    ISLAND_FIELDS,
+                                    ParameterTab::Terrain,
+                                );
+                                spawn_tab_section(
+                                    sections,
+                                    materials,
+                                    ParameterTab::Hydrology,
+                                    HYDROLOGY_FIELDS,
+                                    ParameterTab::Terrain,
+                                );
                             });
                     });
             });
+    });
 }
 
 fn button_bundle(materials: &ButtonMaterials, size: Vec2) -> ButtonBundle {
@@ -1197,6 +1276,12 @@ fn field_step(field: ParameterField) -> f32 {
         ParameterField::ContinentFrequency => 0.05,
         ParameterField::ContinentThreshold => 0.02,
         ParameterField::MountainHeight => 4.0,
+        ParameterField::MountainRangeCount => 1.0,
+        ParameterField::MountainRangeWidth => 10.0,
+        ParameterField::MountainRangeStrength => 0.1,
+        ParameterField::MountainRangeSpurChance => 0.05,
+        ParameterField::MountainRangeSpurStrength => 0.05,
+        ParameterField::MountainRangeRoughness => 0.05,
         ParameterField::MoistureFrequency => 0.05,
         ParameterField::TemperatureVariation => 0.5,
         ParameterField::HighlandBonus => 2.0,
@@ -1602,7 +1687,7 @@ fn handle_map_zoom(
 
     for event in wheel_events.read() {
         // Use the mouse wheel Y delta for zooming (reduced sensitivity)
-        let zoom_delta = -event.y * 0.01;  // Smooth zoom
+        let zoom_delta = -event.y * 0.01; // Smooth zoom
         state.camera_zoom = (state.camera_zoom * (1.0 + zoom_delta)).clamp(0.1, 50.0);
 
         // Update the first camera we find (should be the map camera)
@@ -1670,7 +1755,10 @@ fn handle_map_pan(
 
 fn update_location_popup(
     state: Res<WorldBuilderState>,
-    mut popup_query: Query<(&mut Visibility, &mut Transform), (With<LocationPopup>, Without<Camera2d>)>,
+    mut popup_query: Query<
+        (&mut Visibility, &mut Transform),
+        (With<LocationPopup>, Without<Camera2d>),
+    >,
     mut text_query: Query<&mut Text, With<LocationPopupText>>,
 ) {
     // Only show popup if we have a selection and popup is enabled
@@ -1725,7 +1813,14 @@ fn update_detail_view(
     if let Some(center) = state.detail_center {
         // Create detail window if it doesn't exist
         if detail_window.entity.is_none() {
-            create_detail_window(&mut commands, &mut detail_window, &mut images, &state.generator, center, state.visualization);
+            create_detail_window(
+                &mut commands,
+                &mut detail_window,
+                &mut images,
+                &state.generator,
+                center,
+                state.visualization,
+            );
             detail_window.last_center = Some(center);
             return; // Window creation happens this frame
         }
@@ -1750,14 +1845,22 @@ fn update_detail_view(
                 detail_image.sampler = ImageSampler::nearest();
 
                 // Render 512x512 blocks centered at the click position
-                render_block_detail(&mut detail_image, &state.generator, center, state.visualization);
+                render_block_detail(
+                    &mut detail_image,
+                    &state.generator,
+                    center,
+                    state.visualization,
+                );
 
                 // Update the image handle
                 let new_handle = images.add(detail_image);
                 *image_handle = new_handle;
 
                 detail_window.last_center = Some(center);
-                info!("Rendered detail view at world position ({:.0}, {:.0})", center.x, center.y);
+                info!(
+                    "Rendered detail view at world position ({:.0}, {:.0})",
+                    center.x, center.y
+                );
             }
         }
     }
@@ -1772,27 +1875,31 @@ fn create_detail_window(
     visualization: MapVisualization,
 ) {
     // Create the detail window
-    let window_entity = commands.spawn(Window {
-        title: "World Builder - Block Detail (512x512)".into(),
-        resolution: WindowResolution::new(512.0, 512.0),
-        present_mode: PresentMode::AutoVsync,
-        resizable: false,
-        ..default()
-    }).id();
+    let window_entity = commands
+        .spawn(Window {
+            title: "World Builder - Block Detail (512x512)".into(),
+            resolution: WindowResolution::new(512.0, 512.0),
+            present_mode: PresentMode::AutoVsync,
+            resizable: false,
+            ..default()
+        })
+        .id();
 
     // Create camera for detail window (on render layer 1)
-    let camera_entity = commands.spawn((
-        Camera2dBundle {
-            camera: Camera {
-                target: RenderTarget::Window(WindowRef::Entity(window_entity)),
-                clear_color: ClearColorConfig::Custom(Color::BLACK),
+    let camera_entity = commands
+        .spawn((
+            Camera2dBundle {
+                camera: Camera {
+                    target: RenderTarget::Window(WindowRef::Entity(window_entity)),
+                    clear_color: ClearColorConfig::Custom(Color::BLACK),
+                    ..default()
+                },
                 ..default()
             },
-            ..default()
-        },
-        DetailWindowCamera,
-        RenderLayers::layer(1), // Detail camera only sees layer 1
-    )).id();
+            DetailWindowCamera,
+            RenderLayers::layer(1), // Detail camera only sees layer 1
+        ))
+        .id();
 
     // Create initial image with the actual detail content
     let mut detail_image = Image::new_fill(
@@ -1841,12 +1948,20 @@ fn render_block_detail(
     let start_x = center.x - 256.0;
     let start_z = center.y - 256.0;
 
-    info!("Rendering detail view from ({:.0}, {:.0}) to ({:.0}, {:.0})",
-        start_x, start_z, start_x + 512.0, start_z + 512.0);
+    info!(
+        "Rendering detail view from ({:.0}, {:.0}) to ({:.0}, {:.0})",
+        start_x,
+        start_z,
+        start_x + 512.0,
+        start_z + 512.0
+    );
 
     // Sample the center point to see what we're looking at
     let sample_height = generator.get_height(center.x, center.y);
-    info!("Center point at ({:.0}, {:.0}): height={:.1}", center.x, center.y, sample_height);
+    info!(
+        "Center point at ({:.0}, {:.0}): height={:.1}",
+        center.x, center.y, sample_height
+    );
 
     // Render the detail view with the same coordinate system as the main map
     for y in 0..512 {
@@ -1976,11 +2091,11 @@ fn apply_selection_marker(
 
             // Convert to world space position on the map sprite
             let x = (u - 0.5) * MAP_WIDTH as f32;
-            let y = (0.5 - v) * MAP_HEIGHT as f32;  // Invert Y axis
+            let y = (0.5 - v) * MAP_HEIGHT as f32; // Invert Y axis
 
             transform.translation.x = x;
             transform.translation.y = y;
-            transform.translation.z = 10.0;  // Above the map
+            transform.translation.z = 10.0; // Above the map
             *visibility = Visibility::Visible;
         } else {
             *visibility = Visibility::Hidden;
@@ -2022,7 +2137,10 @@ fn redraw_map_when_needed(
     let texture_width = MAP_WIDTH;
     let texture_height = MAP_HEIGHT;
 
-    info!("Rendering overview map at {}x{}", texture_width, texture_height);
+    info!(
+        "Rendering overview map at {}x{}",
+        texture_width, texture_height
+    );
 
     // Create a new image with base resolution
     let mut new_image = Image::new_fill(
@@ -2038,11 +2156,7 @@ fn redraw_map_when_needed(
     );
 
     // Paint the entire map (full planet view)
-    paint_map(
-        &mut new_image,
-        &state.generator,
-        state.visualization,
-    );
+    paint_map(&mut new_image, &state.generator, state.visualization);
 
     // Create a new handle for the updated image
     let new_handle = images.add(new_image);
@@ -2060,7 +2174,6 @@ fn redraw_map_when_needed(
 
     state.repaint_requested = false;
 }
-
 
 fn handle_map_click(
     mut commands: Commands,
@@ -2113,8 +2226,14 @@ fn handle_map_click(
 
         // Set detail center for block-level inspection (note: using X and Z for terrain)
         state.detail_center = Some(Vec2::new(world_x, world_z));
-        info!("Inspecting blocks at world position ({:.0}, {:.0})", world_x, world_z);
-        info!("Map click at ({:.1}, {:.1}) -> world ({:.0}, {:.0})", map_x, map_y, world_x, world_z);
+        info!(
+            "Inspecting blocks at world position ({:.0}, {:.0})",
+            world_x, world_z
+        );
+        info!(
+            "Map click at ({:.1}, {:.1}) -> world ({:.0}, {:.0})",
+            map_x, map_y, world_x, world_z
+        );
 
         // Remove old marker if it exists
         if let Some(old_marker) = detail_window.marker_entity {
@@ -2123,19 +2242,21 @@ fn handle_map_click(
 
         // Create a red square marker on the map showing the 512x512 area
         let marker_size = 512.0 * (MAP_WIDTH as f32 / map_size);
-        let marker_entity = commands.spawn((
-            SpriteBundle {
-                sprite: Sprite {
-                    color: Color::rgba(1.0, 0.0, 0.0, 0.5),
-                    custom_size: Some(Vec2::new(marker_size, marker_size)),
+        let marker_entity = commands
+            .spawn((
+                SpriteBundle {
+                    sprite: Sprite {
+                        color: Color::rgba(1.0, 0.0, 0.0, 0.5),
+                        custom_size: Some(Vec2::new(marker_size, marker_size)),
+                        ..default()
+                    },
+                    transform: Transform::from_xyz(world_pos.x, world_pos.y, 10.0),
                     ..default()
                 },
-                transform: Transform::from_xyz(world_pos.x, world_pos.y, 10.0),
-                ..default()
-            },
-            InspectionMarker,
-            RenderLayers::default(), // On the main map layer
-        )).id();
+                InspectionMarker,
+                RenderLayers::default(), // On the main map layer
+            ))
+            .id();
 
         detail_window.marker_entity = Some(marker_entity);
     }
@@ -2259,7 +2380,8 @@ fn paint_map(image: &mut Image, generator: &WorldGenerator, visualization: MapVi
                     for sx in 0..sample_rate {
                         let sample_x = world_x + sx as f32 * step;
                         let sample_z = world_z + sy as f32 * step;
-                        let sample_color = color_for_mode(generator, sample_x, sample_z, visualization);
+                        let sample_color =
+                            color_for_mode(generator, sample_x, sample_z, visualization);
                         r += sample_color[0] as u32;
                         g += sample_color[1] as u32;
                         b += sample_color[2] as u32;
@@ -2267,7 +2389,12 @@ fn paint_map(image: &mut Image, generator: &WorldGenerator, visualization: MapVi
                 }
 
                 let samples = (sample_rate * sample_rate) as u32;
-                [(r / samples) as u8, (g / samples) as u8, (b / samples) as u8, 255]
+                [
+                    (r / samples) as u8,
+                    (g / samples) as u8,
+                    (b / samples) as u8,
+                    255,
+                ]
             } else {
                 color_for_mode(generator, world_x, world_z, visualization)
             };
@@ -2277,7 +2404,6 @@ fn paint_map(image: &mut Image, generator: &WorldGenerator, visualization: MapVi
         }
     }
 }
-
 
 fn color_for_mode(
     generator: &WorldGenerator,
@@ -2584,6 +2710,24 @@ fn reset_parameter(field: ParameterField, state: &mut WorldBuilderState) {
             state.working.continent_threshold = defaults.continent_threshold
         }
         ParameterField::MountainHeight => state.working.mountain_height = defaults.mountain_height,
+        ParameterField::MountainRangeCount => {
+            state.working.mountain_range_count = defaults.mountain_range_count
+        }
+        ParameterField::MountainRangeWidth => {
+            state.working.mountain_range_width = defaults.mountain_range_width
+        }
+        ParameterField::MountainRangeStrength => {
+            state.working.mountain_range_strength = defaults.mountain_range_strength
+        }
+        ParameterField::MountainRangeSpurChance => {
+            state.working.mountain_range_spur_chance = defaults.mountain_range_spur_chance
+        }
+        ParameterField::MountainRangeSpurStrength => {
+            state.working.mountain_range_spur_strength = defaults.mountain_range_spur_strength
+        }
+        ParameterField::MountainRangeRoughness => {
+            state.working.mountain_range_roughness = defaults.mountain_range_roughness
+        }
         ParameterField::MoistureFrequency => {
             state.working.moisture_frequency = defaults.moisture_frequency
         }

@@ -1,5 +1,5 @@
 use forge::planet::{PlanetConfig, PlanetSize};
-use forge::world::{WorldGenerator, WorldGenConfig};
+use forge::world::{WorldGenConfig, WorldGenerator};
 
 fn main() {
     println!("Testing Terrain Scaling Across Different World Sizes\n");
@@ -16,10 +16,13 @@ fn main() {
     ];
 
     for (name, size) in &test_sizes {
-        println!("\n{} World ({}x{} chunks, {}x{} blocks)",
+        println!(
+            "\n{} World ({}x{} chunks, {}x{} blocks)",
             name,
-            size.chunks(), size.chunks(),
-            size.blocks(), size.blocks()
+            size.chunks(),
+            size.chunks(),
+            size.blocks(),
+            size.blocks()
         );
         println!("{}", "-".repeat(60));
 
@@ -33,17 +36,32 @@ fn main() {
         println!("Configuration:");
         println!("  Continent count: {}", world_config.continent_count);
         println!("  Continent radius: {:.3}", world_config.continent_radius);
-        println!("  Continent frequency: {:.3}", world_config.continent_frequency);
+        println!(
+            "  Continent frequency: {:.3}",
+            world_config.continent_frequency
+        );
         println!("  Detail frequency: {:.3}", world_config.detail_frequency);
-        println!("  Mountain frequency: {:.3}", world_config.mountain_frequency);
+        println!(
+            "  Mountain frequency: {:.3}",
+            world_config.mountain_frequency
+        );
         println!("  Island frequency: {:.3}", world_config.island_frequency);
-        println!("  Major river count: {}", world_config.hydrology_major_river_count);
+        println!(
+            "  Major river count: {}",
+            world_config.hydrology_major_river_count
+        );
 
         println!("\nScale-Invariant Features (should be constant):");
         println!("  Ocean depth: {} blocks", world_config.ocean_depth);
-        println!("  Deep ocean depth: {} blocks", world_config.deep_ocean_depth);
+        println!(
+            "  Deep ocean depth: {} blocks",
+            world_config.deep_ocean_depth
+        );
         println!("  Mountain height: {} blocks", world_config.mountain_height);
-        println!("  Detail amplitude: {} blocks", world_config.detail_amplitude);
+        println!(
+            "  Detail amplitude: {} blocks",
+            world_config.detail_amplitude
+        );
         println!("  Highland bonus: {} blocks", world_config.highland_bonus);
         println!("  Island height: {} blocks", world_config.island_height);
         println!("  River max depth: {} blocks", world_config.river_max_depth);
@@ -85,7 +103,8 @@ fn measure_beach_width(generator: &WorldGenerator, world_size: f32) {
                 }
             } else if in_beach {
                 let width = world_x - beach_start;
-                if width > 0.0 && width < 50.0 {  // Reasonable beach width
+                if width > 0.0 && width < 50.0 {
+                    // Reasonable beach width
                     beach_widths.push(width);
                 }
                 in_beach = false;
@@ -95,7 +114,10 @@ fn measure_beach_width(generator: &WorldGenerator, world_size: f32) {
 
     if !beach_widths.is_empty() {
         let avg_width: f32 = beach_widths.iter().sum::<f32>() / beach_widths.len() as f32;
-        println!("  Average beach width: {:.1} blocks (should be ~3)", avg_width);
+        println!(
+            "  Average beach width: {:.1} blocks (should be ~3)",
+            avg_width
+        );
     }
 }
 
@@ -120,7 +142,8 @@ fn measure_river_widths(generator: &WorldGenerator, world_size: f32) {
                 }
             } else if in_river {
                 let width = world_x - river_start;
-                if width > 5.0 && width < 100.0 {  // Reasonable river width
+                if width > 5.0 && width < 100.0 {
+                    // Reasonable river width
                     total_width += width;
                     river_sections += 1;
                 }
@@ -131,7 +154,10 @@ fn measure_river_widths(generator: &WorldGenerator, world_size: f32) {
 
     if river_sections > 0 {
         let avg_width = total_width / river_sections as f32;
-        println!("  Average river width: {:.1} blocks (should be 10-30)", avg_width);
+        println!(
+            "  Average river width: {:.1} blocks (should be 10-30)",
+            avg_width
+        );
     }
 }
 
@@ -139,9 +165,9 @@ fn measure_mountain_spacing(generator: &WorldGenerator, world_size: f32) {
     // Count peaks above threshold
     let samples = 500;
     let mut peak_positions = Vec::new();
-    let mountain_threshold = generator.config().sea_level +
-                             generator.config().highland_bonus * 0.5 +
-                             generator.config().mountain_height * 0.3;
+    let mountain_threshold = generator.config().sea_level
+        + generator.config().highland_bonus * 0.5
+        + generator.config().mountain_height * 0.3;
 
     for y in 0..samples {
         for x in 0..samples {
@@ -155,7 +181,9 @@ fn measure_mountain_spacing(generator: &WorldGenerator, world_size: f32) {
                 let check_dist = world_size / samples as f32;
                 for dx in -1..=1 {
                     for dz in -1..=1 {
-                        if dx == 0 && dz == 0 { continue; }
+                        if dx == 0 && dz == 0 {
+                            continue;
+                        }
                         let nx = world_x + dx as f32 * check_dist;
                         let nz = world_z + dz as f32 * check_dist;
                         if generator.get_height(nx, nz) > height {
@@ -163,7 +191,9 @@ fn measure_mountain_spacing(generator: &WorldGenerator, world_size: f32) {
                             break;
                         }
                     }
-                    if !is_peak { break; }
+                    if !is_peak {
+                        break;
+                    }
                 }
 
                 if is_peak {
@@ -180,7 +210,9 @@ fn measure_mountain_spacing(generator: &WorldGenerator, world_size: f32) {
             let (x1, z1) = peak_positions[i];
             let mut min_dist = f32::MAX;
             for j in 0..peak_positions.len() {
-                if i == j { continue; }
+                if i == j {
+                    continue;
+                }
                 let (x2, z2) = peak_positions[j];
                 let dist = ((x2 - x1).powi(2) + (z2 - z1).powi(2)).sqrt();
                 min_dist = min_dist.min(dist);
@@ -193,7 +225,10 @@ fn measure_mountain_spacing(generator: &WorldGenerator, world_size: f32) {
         if !distances.is_empty() {
             let avg_spacing = distances.iter().sum::<f32>() / distances.len() as f32;
             println!("  Mountain peak count: {}", peak_positions.len());
-            println!("  Average mountain spacing: {:.1} blocks (should be 100-400)", avg_spacing);
+            println!(
+                "  Average mountain spacing: {:.1} blocks (should be 100-400)",
+                avg_spacing
+            );
         }
     }
 }

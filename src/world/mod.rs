@@ -108,6 +108,12 @@ pub struct WorldGenConfig {
     pub mountain_frequency: f64,
     pub mountain_height: f32,
     pub mountain_threshold: f32,
+    pub mountain_range_count: u32,
+    pub mountain_range_width: f32,
+    pub mountain_range_strength: f32,
+    pub mountain_range_spur_chance: f32,
+    pub mountain_range_spur_strength: f32,
+    pub mountain_range_roughness: f32,
     pub moisture_frequency: f64,
     pub equator_temp_c: f32,
     pub pole_temp_c: f32,
@@ -153,6 +159,12 @@ impl Default for WorldGenConfig {
             mountain_frequency: 2.5,
             mountain_height: 64.0,
             mountain_threshold: 0.48,
+            mountain_range_count: 12,
+            mountain_range_width: 300.0,
+            mountain_range_strength: 2.2,
+            mountain_range_spur_chance: 0.6,
+            mountain_range_spur_strength: 1.5,
+            mountain_range_roughness: 1.25,
             moisture_frequency: 2.6,
             equator_temp_c: 30.0,
             pole_temp_c: -25.0,
@@ -193,12 +205,17 @@ impl WorldGenConfig {
 
         // SCALE-DEPENDENT: Features that scale with world size
         // Continent count scales logarithmically - more continents on larger worlds but not linearly
-        let continent_count = ((planet_size as f32).log2() * 0.4).max(3.0).min(20.0).round() as u32;
+        let continent_count = ((planet_size as f32).log2() * 0.4)
+            .max(3.0)
+            .min(20.0)
+            .round() as u32;
         // Continent radius scales proportionally to maintain map appearance
         let continent_radius = 0.23 * (planet_size as f32 / STANDARD_WORLD_SIZE).sqrt();
         // Major river count scales with world area
         let major_river_count = ((planet_size as f32 / STANDARD_WORLD_SIZE).sqrt() * 10.0)
-            .max(5.0).min(100.0).round() as u32;
+            .max(5.0)
+            .min(100.0)
+            .round() as u32;
 
         Self {
             seed: config.seed,
@@ -206,33 +223,43 @@ impl WorldGenConfig {
             sea_level: config.sea_level,
 
             // SCALE-INVARIANT: Physical ocean dimensions always constant in blocks
-            ocean_depth: 50.0,  // Continental shelf depth ~50 blocks (50m)
-            deep_ocean_depth: 200.0,  // Deep ocean ~200 blocks (200m) - scaled for gameplay
+            ocean_depth: 50.0,       // Continental shelf depth ~50 blocks (50m)
+            deep_ocean_depth: 200.0, // Deep ocean ~200 blocks (200m) - scaled for gameplay
 
             // SCALE-DEPENDENT: Continental distribution
             continent_threshold: 0.18,
             continent_power: 0.95,
             continent_bias: 0.34,
             continent_count,  // Logarithmic scaling
-            continent_radius,  // Proportional scaling
+            continent_radius, // Proportional scaling
             continent_edge_power: 1.2,
-            continent_frequency: 0.45 * frequency_scale,  // More continents, same physical size
+            continent_frequency: 0.45 * frequency_scale, // More continents, same physical size
 
             // SCALE-INVARIANT: Terrain detail (hills, valleys)
             // Target: hills should be ~50-200 blocks wide regardless of world size
             // Since we use UV space (0-1), we need to scale frequency by world size
             // to maintain constant physical feature size
-            detail_frequency: (planet_size as f64 / 100.0),  // Hills ~100 blocks wide
-            detail_amplitude: 12.0,  // Hills always 12 blocks tall
+            detail_frequency: (planet_size as f64 / 100.0), // Hills ~100 blocks wide
+            detail_amplitude: 12.0,                         // Hills always 12 blocks tall
 
             // SCALE-INVARIANT: Mountain dimensions
             // Target: mountains should be ~200-800 blocks wide regardless of world size
-            mountain_frequency: (planet_size as f64 / 400.0),  // Mountains ~400 blocks wide
-            mountain_height: 250.0,  // Mountains rise 250 blocks (250m) - more realistic
+            mountain_frequency: (planet_size as f64 / 400.0), // Mountains ~400 blocks wide
+            mountain_height: 250.0, // Mountains rise 250 blocks (250m) - more realistic
             mountain_threshold: 0.42,
+            mountain_range_count: {
+                let scale = (planet_size as f32 / STANDARD_WORLD_SIZE).max(0.25);
+                let base = 12.0 * scale.powf(0.75);
+                base.round().clamp(4.0, 40.0) as u32
+            },
+            mountain_range_width: 300.0,
+            mountain_range_strength: 2.2,
+            mountain_range_spur_chance: 0.6,
+            mountain_range_spur_strength: 1.5,
+            mountain_range_roughness: 1.25,
 
             // SCALE-INVARIANT: Biome transitions
-            moisture_frequency: (planet_size as f64 / 300.0),  // Biome patches ~300 blocks wide
+            moisture_frequency: (planet_size as f64 / 300.0), // Biome patches ~300 blocks wide
 
             // Climate (scale-independent)
             equator_temp_c: 28.0,
@@ -241,32 +268,34 @@ impl WorldGenConfig {
             temperature_variation: 3.0,
 
             // SCALE-INVARIANT: Highland/plateau heights
-            highland_bonus: 20.0,  // Highlands always 20 blocks above base
+            highland_bonus: 20.0, // Highlands always 20 blocks above base
 
             // SCALE-INVARIANT: Island dimensions
-            island_frequency: (planet_size as f64 / 100.0),  // Islands ~100 blocks wide
+            island_frequency: (planet_size as f64 / 100.0), // Islands ~100 blocks wide
             island_threshold: 0.55,
-            island_height: 30.0,  // Islands always rise 30 blocks max
+            island_height: 30.0, // Islands always rise 30 blocks max
             island_falloff: 2.8,
 
             // Hydrology
-            hydrology_resolution: ((planet_size as f32 / 16.0).sqrt() as u32).max(256).min(4096),
+            hydrology_resolution: ((planet_size as f32 / 16.0).sqrt() as u32)
+                .max(256)
+                .min(4096),
             hydrology_rainfall: 1.4,
             hydrology_rainfall_variance: 0.4,
-            hydrology_rainfall_frequency: (planet_size as f64 / 200.0),  // Rain patterns ~200 blocks wide
-            hydrology_major_river_count: major_river_count,  // Scale-dependent
+            hydrology_rainfall_frequency: (planet_size as f64 / 200.0), // Rain patterns ~200 blocks wide
+            hydrology_major_river_count: major_river_count,             // Scale-dependent
             hydrology_major_river_boost: 6.0,
 
             // SCALE-INVARIANT: River physical dimensions
             river_flow_threshold: 120.0,
             river_depth_scale: 0.06,
-            river_max_depth: 18.0,  // Rivers always max 18 blocks deep
+            river_max_depth: 18.0, // Rivers always max 18 blocks deep
             river_surface_ratio: 0.65,
 
             // SCALE-INVARIANT: Lake dimensions
             lake_flow_threshold: 140.0,
-            lake_depth: 15.0,  // Lakes average 15 blocks deep (15m) - more realistic
-            lake_shore_blend: 5.0,  // Shore transition 5 blocks for gradual slope
+            lake_depth: 15.0, // Lakes average 15 blocks deep (15m) - more realistic
+            lake_shore_blend: 5.0, // Shore transition 5 blocks for gradual slope
         }
     }
 }
@@ -282,6 +311,7 @@ pub struct WorldGenerator {
     island_noise: Perlin,
     hydrology_rain_noise: Perlin,
     continent_sites: Vec<ContinentSite>,
+    mountain_ranges: MountainRangeMap,
     hydrology: HydrologyMap,
 }
 
@@ -304,6 +334,343 @@ struct HydrologySample {
     lake_intensity: f32,
     rainfall: f32,
     major_river: f32,
+}
+
+#[derive(Clone)]
+struct MountainRangeMap {
+    width: usize,
+    height: usize,
+    data: Vec<f32>,
+}
+
+#[derive(Clone, Copy)]
+struct RangeParams {
+    spur_chance: f32,
+    spur_strength: f32,
+    roughness: f32,
+}
+
+impl MountainRangeMap {
+    fn empty() -> Self {
+        Self {
+            width: 1,
+            height: 1,
+            data: vec![0.0],
+        }
+    }
+
+    fn generate(config: &WorldGenConfig) -> Self {
+        let planet_size = config.planet_size.max(1) as f32;
+        let mut resolution = (planet_size / 32.0).round() as usize;
+        if resolution < 128 {
+            resolution = 128;
+        }
+        if resolution > 4096 {
+            resolution = 4096;
+        }
+
+        let width = resolution;
+        let height = resolution;
+        let mut map = Self {
+            width,
+            height,
+            data: vec![0.0; width * height],
+        };
+
+        let count = config.mountain_range_count as usize;
+        if count == 0 || map.data.is_empty() {
+            return map;
+        }
+
+        let mut rng = StdRng::seed_from_u64(config.seed.wrapping_add(17));
+        let base_half_width =
+            (config.mountain_range_width.max(8.0) / planet_size * 0.5).clamp(0.002, 0.25);
+        let base_strength = config.mountain_range_strength.max(0.0);
+        let range_params = RangeParams {
+            spur_chance: config.mountain_range_spur_chance.clamp(0.0, 1.0),
+            spur_strength: config.mountain_range_spur_strength.clamp(0.0, 2.0),
+            roughness: config.mountain_range_roughness.clamp(0.0, 2.5),
+        };
+        let roughness_noise = Perlin::new(config.seed.wrapping_add(91) as u32);
+
+        for _ in 0..count {
+            let mut points = Vec::new();
+            let mut current = Vec2::new(rng.gen::<f32>(), rng.gen::<f32>());
+            let mut heading = rng.gen::<f32>() * TAU;
+
+            let segments = rng.gen_range(6..12);
+            let total_length = rng.gen_range(0.18..0.42);
+            let step = total_length / segments as f32;
+            points.push(current);
+
+            for _ in 0..segments {
+                let bend = (rng.gen::<f32>() - 0.5) * 0.4;
+                heading = (heading + bend).rem_euclid(TAU);
+                let lateral = (rng.gen::<f32>() - 0.5) * 0.35 * step;
+                let forward = Vec2::new(heading.cos(), heading.sin());
+                let normal = Vec2::new(-forward.y, forward.x);
+                current += forward * step + normal * lateral;
+                current.x = current.x.rem_euclid(1.0);
+                current.y = current.y.rem_euclid(1.0);
+                points.push(current);
+            }
+
+            let width_variation = rng.gen_range(0.75..1.35);
+            let strength_variation = rng.gen_range(0.7..1.3);
+            let half_width = (base_half_width * width_variation).clamp(0.002, 0.3);
+            let strength = base_strength * strength_variation;
+            map.paint_range(
+                &points,
+                half_width,
+                strength,
+                &roughness_noise,
+                range_params,
+                &mut rng,
+                true,
+            );
+        }
+
+        map.normalize();
+        map
+    }
+
+    fn sample(&self, u: f32, v: f32) -> f32 {
+        if self.data.is_empty() || self.width == 0 || self.height == 0 {
+            return 0.0;
+        }
+
+        let x = u.rem_euclid(1.0) * self.width as f32;
+        let y = v.rem_euclid(1.0) * self.height as f32;
+
+        let x0 = x.floor() as isize;
+        let y0 = y.floor() as isize;
+        let tx = x - x0 as f32;
+        let ty = y - y0 as f32;
+
+        let x1 = x0 + 1;
+        let y1 = y0 + 1;
+
+        let v00 = self.get(x0, y0);
+        let v10 = self.get(x1, y0);
+        let v01 = self.get(x0, y1);
+        let v11 = self.get(x1, y1);
+
+        let v0 = v00 + (v10 - v00) * tx;
+        let v1 = v01 + (v11 - v01) * tx;
+        (v0 + (v1 - v0) * ty).clamp(0.0, 1.0)
+    }
+
+    fn paint_range(
+        &mut self,
+        points: &[Vec2],
+        half_width: f32,
+        strength: f32,
+        roughness_noise: &Perlin,
+        params: RangeParams,
+        rng: &mut StdRng,
+        allow_spurs: bool,
+    ) {
+        if points.len() < 2 || half_width <= 0.0 || strength <= 0.0 {
+            return;
+        }
+
+        let spawn_chance = params.spur_chance.clamp(0.0, 1.0);
+
+        for window in points.windows(2) {
+            let start = window[0];
+            let end = window[1];
+            self.paint_segment(start, end, half_width, strength, roughness_noise, params);
+
+            if allow_spurs && spawn_chance > f32::EPSILON && params.spur_strength > 0.0 {
+                if rng.gen::<f32>() < spawn_chance {
+                    if let Some(spur_points) =
+                        self.generate_spur(start, end, half_width, params, rng)
+                    {
+                        let spur_half = (half_width * 0.6).clamp(0.001, half_width);
+                        let spur_strength =
+                            strength * params.spur_strength * rng.gen_range(0.6..1.35);
+                        self.paint_range(
+                            &spur_points,
+                            spur_half,
+                            spur_strength,
+                            roughness_noise,
+                            params,
+                            rng,
+                            false,
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    fn paint_segment(
+        &mut self,
+        start: Vec2,
+        end: Vec2,
+        half_width: f32,
+        strength: f32,
+        roughness_noise: &Perlin,
+        params: RangeParams,
+    ) {
+        let dx = torus_delta(start.x, end.x);
+        let dy = torus_delta(start.y, end.y);
+        let distance = (dx * dx + dy * dy).sqrt().max(0.0001);
+        let steps = (distance * self.width as f32 * 2.4).ceil() as usize;
+        let tangent = Vec2::new(dx, dy).normalize_or_zero();
+        let lateral = Vec2::new(-tangent.y, tangent.x);
+        let rough_freq = 4.0 + params.roughness * 6.0;
+
+        for i in 0..=steps {
+            let t = i as f32 / steps.max(1) as f32;
+            let point = Vec2::new(
+                (start.x + dx * t).rem_euclid(1.0),
+                (start.y + dy * t).rem_euclid(1.0),
+            );
+
+            let noise_value = if params.roughness > 0.01 {
+                torus_noise(roughness_noise, point.x, point.y, rough_freq, t)
+            } else {
+                0.0
+            };
+
+            let width_mod = (1.0 + noise_value * params.roughness * 0.5).clamp(0.35, 2.8);
+            let strength_mod = (1.0 + noise_value * params.roughness * 0.4).clamp(0.3, 2.6);
+            let local_half = (half_width * width_mod).clamp(0.0005, 0.35);
+            let local_strength = strength * strength_mod;
+
+            self.splat(point, local_half, local_strength);
+
+            if params.roughness > 0.2 && tangent.length_squared() > 0.0 {
+                let along_offset = (noise_value * 0.5 + 0.5) * local_half * 0.6;
+                let side_offset = (noise_value * 0.5) * local_half * 0.5;
+
+                let crest_point = wrap_vec2(point + tangent * along_offset);
+                self.splat(crest_point, local_half * 0.55, local_strength * 0.55);
+
+                let spur_point = wrap_vec2(point + lateral * side_offset);
+                self.splat(spur_point, local_half * 0.45, local_strength * 0.4);
+            }
+        }
+    }
+
+    fn generate_spur(
+        &self,
+        start: Vec2,
+        end: Vec2,
+        half_width: f32,
+        params: RangeParams,
+        rng: &mut StdRng,
+    ) -> Option<Vec<Vec2>> {
+        let dx = torus_delta(start.x, end.x);
+        let dy = torus_delta(start.y, end.y);
+        let base = Vec2::new(dx, dy);
+        let base_length = base.length();
+        if base_length <= f32::EPSILON {
+            return None;
+        }
+
+        let dir = base / base_length;
+        let normal = Vec2::new(-dir.y, dir.x);
+        if normal.length_squared() <= f32::EPSILON {
+            return None;
+        }
+
+        let anchor_t = rng.gen_range(0.15..0.85);
+        let anchor = Vec2::new(
+            (start.x + dx * anchor_t).rem_euclid(1.0),
+            (start.y + dy * anchor_t).rem_euclid(1.0),
+        );
+
+        let mut heading = normal * if rng.gen_bool(0.5) { 1.0 } else { -1.0 };
+        heading = heading.normalize_or_zero();
+        if heading.length_squared() <= f32::EPSILON {
+            return None;
+        }
+
+        let spur_segments = rng.gen_range(3..6);
+        let rough_factor = params.roughness.max(0.2);
+        let base_length = (half_width * rng.gen_range(1.8..3.6)).max(0.005);
+        let step = (base_length / spur_segments as f32).max(0.002);
+
+        let mut points = Vec::with_capacity(spur_segments + 1);
+        points.push(anchor);
+        let mut current = anchor;
+
+        for _ in 0..spur_segments {
+            let bend = (rng.gen::<f32>() - 0.5) * 0.6 * rough_factor;
+            heading = rotate_vec2(heading, bend);
+            let mix = rng.gen_range(-0.35..0.35);
+            heading = (heading + dir * mix).normalize_or_zero();
+            if heading.length_squared() <= f32::EPSILON {
+                break;
+            }
+
+            current = wrap_vec2(current + heading * step);
+            points.push(current);
+        }
+
+        if points.len() > 2 {
+            Some(points)
+        } else {
+            None
+        }
+    }
+
+    fn splat(&mut self, center: Vec2, half_width: f32, strength: f32) {
+        let radius = (half_width * self.width as f32 * 3.0).ceil() as i32;
+        if radius <= 0 {
+            return;
+        }
+
+        let cx = (center.x * self.width as f32).floor() as i32;
+        let cy = (center.y * self.height as f32).floor() as i32;
+
+        for dy in -radius..=radius {
+            for dx in -radius..=radius {
+                let x = wrap_index(cx + dx, self.width as i32);
+                let y = wrap_index(cy + dy, self.height as i32);
+
+                let sample_u = (x as f32 + 0.5) / self.width as f32;
+                let sample_v = (y as f32 + 0.5) / self.height as f32;
+                let du = torus_distance(center.x, sample_u);
+                let dv = torus_distance(center.y, sample_v);
+                let dist = (du * du + dv * dv).sqrt();
+                if dist > half_width * 3.0 {
+                    continue;
+                }
+
+                let norm = (dist / half_width).min(3.0);
+                let falloff = (-norm * norm * 0.7).exp();
+                let idx = y as usize * self.width + x as usize;
+                self.data[idx] += falloff * strength;
+            }
+        }
+    }
+
+    fn normalize(&mut self) {
+        let mut max_value = 0.0_f32;
+        for value in &self.data {
+            if *value > max_value {
+                max_value = *value;
+            }
+        }
+
+        if max_value <= f32::EPSILON {
+            self.data.fill(0.0);
+            return;
+        }
+
+        for value in &mut self.data {
+            *value = (*value / max_value).clamp(0.0, 1.0);
+        }
+    }
+
+    fn get(&self, x: isize, y: isize) -> f32 {
+        let xi = wrap_index_isize(x, self.width as isize) as usize;
+        let yi = wrap_index_isize(y, self.height as isize) as usize;
+        self.data[yi * self.width + xi]
+    }
 }
 
 #[derive(Clone)]
@@ -450,7 +817,8 @@ impl HydrologyMap {
                 let mut selected: Vec<usize> = Vec::new();
                 let num_candidates = candidates.len();
                 for (idx, _) in candidates {
-                    if selected.len() >= attempts {  // Try more candidates
+                    if selected.len() >= attempts {
+                        // Try more candidates
                         break;
                     }
                     let x = idx % width;
@@ -473,7 +841,7 @@ impl HydrologyMap {
 
                 if !selected.is_empty() {
                     // Reduce minimum length requirement - even short rivers are better than none
-                    let min_length = 3;  // Very short threshold to allow more rivers
+                    let min_length = 3; // Very short threshold to allow more rivers
                     let rainfall_boost = config.hydrology_rainfall
                         * config.hydrology_major_river_boost.max(0.0)
                         * 0.75;
@@ -491,7 +859,8 @@ impl HydrologyMap {
                         let mut guard = 0;
 
                         // Force rivers to find a path to ocean by carving through obstacles
-                        while guard < count * 2 { // Allow longer searches
+                        while guard < count * 2 {
+                            // Allow longer searches
                             if visited[current] {
                                 // Hit a loop - break out
                                 break;
@@ -513,19 +882,29 @@ impl HydrologyMap {
 
                             for dy in -1..=1 {
                                 for dx in -1..=1 {
-                                    if dx == 0 && dy == 0 { continue; }
-                                    let nx = ((x as isize + dx as isize + width as isize) % width as isize) as usize;
-                                    let ny = ((y as isize + dy as isize + height as isize) % height as isize) as usize;
+                                    if dx == 0 && dy == 0 {
+                                        continue;
+                                    }
+                                    let nx = ((x as isize + dx as isize + width as isize)
+                                        % width as isize)
+                                        as usize;
+                                    let ny = ((y as isize + dy as isize + height as isize)
+                                        % height as isize)
+                                        as usize;
                                     let neighbor = ny * width + nx;
 
-                                    if visited[neighbor] { continue; }
+                                    if visited[neighbor] {
+                                        continue;
+                                    }
 
                                     // Score based on:
                                     // 1. Height (lower is better)
                                     // 2. Distance to edge (closer is better as edges often have ocean)
                                     let height_score = heights[neighbor];
-                                    let edge_dist = (nx.min(width - nx - 1).min(ny).min(height - ny - 1)) as f32;
-                                    let score = height_score + edge_dist * 0.05;  // Slight preference for edges
+                                    let edge_dist =
+                                        (nx.min(width - nx - 1).min(ny).min(height - ny - 1))
+                                            as f32;
+                                    let score = height_score + edge_dist * 0.05; // Slight preference for edges
 
                                     if score < best_score {
                                         best_score = score;
@@ -547,7 +926,8 @@ impl HydrologyMap {
                             path.iter().filter(|&&idx| heights[idx] > sea_level).count();
 
                         // Debug: log all path attempts
-                        let reached_ocean = path.last().map_or(false, |&idx| heights[idx] <= sea_level);
+                        let reached_ocean =
+                            path.last().map_or(false, |&idx| heights[idx] <= sea_level);
                         info!("River path from height {:.1}: {} cells total, {} on land, reached ocean: {}",
                               heights[seed] - sea_level, path.len(), land_length, reached_ocean);
 
@@ -571,9 +951,14 @@ impl HydrologyMap {
                     }
 
                     // Now process only the successful paths (up to desired count)
-                    for (river_idx, (seed, path)) in successful_paths.iter().take(desired).enumerate() {
-                        info!("Processing successful major river {} from height {:.1}",
-                              river_idx + 1, heights[*seed] - sea_level);
+                    for (river_idx, (seed, path)) in
+                        successful_paths.iter().take(desired).enumerate()
+                    {
+                        info!(
+                            "Processing successful major river {} from height {:.1}",
+                            river_idx + 1,
+                            heights[*seed] - sea_level
+                        );
 
                         // Calculate strength for this river based on its length and boost
                         let path_length_factor = (path.len() as f32 / 50.0).min(2.0).max(1.0);
@@ -590,10 +975,16 @@ impl HydrologyMap {
                             for dy in -2i32..=2i32 {
                                 for dx in -2i32..=2i32 {
                                     // Create a diamond shape for the river
-                                    if dx.abs() + dy.abs() > 2 { continue; }
+                                    if dx.abs() + dy.abs() > 2 {
+                                        continue;
+                                    }
 
-                                    let nx = ((x as isize + dx as isize + width as isize) % width as isize) as usize;
-                                    let ny = ((y as isize + dy as isize + height as isize) % height as isize) as usize;
+                                    let nx = ((x as isize + dx as isize + width as isize)
+                                        % width as isize)
+                                        as usize;
+                                    let ny = ((y as isize + dy as isize + height as isize)
+                                        % height as isize)
+                                        as usize;
                                     let wide_idx = ny * width + nx;
 
                                     // Mark this as part of a major river
@@ -602,7 +993,8 @@ impl HydrologyMap {
 
                                     // Set significant depth
                                     let depth_factor = if dx == 0 && dy == 0 { 1.0 } else { 0.7 };
-                                    river_depth[wide_idx] = river_depth[wide_idx].max(max_depth * 0.6 * depth_factor);
+                                    river_depth[wide_idx] =
+                                        river_depth[wide_idx].max(max_depth * 0.6 * depth_factor);
 
                                     // Ensure water level is set
                                     water_level[wide_idx] = water_level[wide_idx].max(sea_level);
@@ -635,10 +1027,16 @@ impl HydrologyMap {
                         }
                     }
 
-                    info!("Created {} valid major rivers with paths to ocean (attempted {})",
-                          valid_rivers.min(desired), num_attempts);
+                    info!(
+                        "Created {} valid major rivers with paths to ocean (attempted {})",
+                        valid_rivers.min(desired),
+                        num_attempts
+                    );
                 } else {
-                    warn!("No major river candidates found! Mountain threshold: {:.1}", mountain_threshold);
+                    warn!(
+                        "No major river candidates found! Mountain threshold: {:.1}",
+                        mountain_threshold
+                    );
                 }
             }
         }
@@ -674,7 +1072,8 @@ impl HydrologyMap {
                 if water >= local_threshold {
                     let depth = if major_path_mask[idx] > 0.0 {
                         // Major rivers carve much deeper channels
-                        let major_depth = max_depth * (1.0 + config.hydrology_major_river_boost * 0.5);
+                        let major_depth =
+                            max_depth * (1.0 + config.hydrology_major_river_boost * 0.5);
                         ((water * depth_scale * 2.0) * major_scale).min(major_depth)
                     } else {
                         ((water * depth_scale) * major_scale).min(max_depth)
@@ -777,7 +1176,7 @@ impl HydrologyMap {
             river_intensity,
             lake_intensity,
             rainfall,
-            major_river: major.max(0.0),  // Return the actual value, not binary
+            major_river: major.max(0.0), // Return the actual value, not binary
         }
     }
 }
@@ -811,9 +1210,11 @@ impl WorldGenerator {
             island_noise,
             hydrology_rain_noise,
             continent_sites,
+            mountain_ranges: MountainRangeMap::empty(),
             hydrology: HydrologyMap::empty(),
         };
 
+        generator.mountain_ranges = MountainRangeMap::generate(&generator.config);
         generator.hydrology = HydrologyMap::generate(&generator);
         generator
     }
@@ -878,16 +1279,34 @@ impl WorldGenerator {
 
         // Use world-space noise for consistent hill sizes across all world sizes
         // Multiple octaves for natural-looking terrain
-        let detail_scale = 50.0;  // Base hill size in blocks
+        let detail_scale = 50.0; // Base hill size in blocks
         let detail1 = self.world_noise(&self.detail_noise, world_x, world_z, detail_scale) as f32;
-        let detail2 = self.world_noise(&self.detail_noise, world_x + 1000.0, world_z + 1000.0, detail_scale * 2.0) as f32 * 0.5;
-        let detail3 = self.world_noise(&self.detail_noise, world_x + 2000.0, world_z + 2000.0, detail_scale * 4.0) as f32 * 0.25;
-        let detail = (detail1 + detail2 + detail3) / 1.75 * self.config.detail_amplitude * land_factor;
+        let detail2 = self.world_noise(
+            &self.detail_noise,
+            world_x + 1000.0,
+            world_z + 1000.0,
+            detail_scale * 2.0,
+        ) as f32
+            * 0.5;
+        let detail3 = self.world_noise(
+            &self.detail_noise,
+            world_x + 2000.0,
+            world_z + 2000.0,
+            detail_scale * 4.0,
+        ) as f32
+            * 0.25;
+        let detail =
+            (detail1 + detail2 + detail3) / 1.75 * self.config.detail_amplitude * land_factor;
 
         // Use world-space noise for consistent mountain sizes
-        let mountain_scale = 200.0;  // Base mountain size in blocks
+        let mountain_scale = 200.0; // Base mountain size in blocks
         let mountain1 = self.world_noise(&self.mountain_noise, world_x, world_z, mountain_scale);
-        let mountain2 = self.world_noise(&self.mountain_noise, world_x + 5000.0, world_z + 5000.0, mountain_scale * 2.0) * 0.5;
+        let mountain2 = self.world_noise(
+            &self.mountain_noise,
+            world_x + 5000.0,
+            world_z + 5000.0,
+            mountain_scale * 2.0,
+        ) * 0.5;
         let mountain_raw = (mountain1 + mountain2) / 1.5;
 
         let mountain_mask = ((mountain_raw + 1.0) * 0.5).powf(1.8);
@@ -898,14 +1317,26 @@ impl WorldGenerator {
             0.0
         };
         let ridge_factor = self.continent_ridge_factor(u as f32, v as f32);
-        let mountains = (mountain_bonus * ridge_factor + land_factor * 0.1).clamp(0.0, 1.0)
+        let range_factor = self
+            .mountain_ranges
+            .sample(u as f32, v as f32)
+            .clamp(0.0, 1.0);
+        let land_weight = land_factor.powf(0.65);
+        let base_mountain = (mountain_bonus * ridge_factor + land_factor * 0.1).clamp(0.0, 1.0)
             * self.config.mountain_height
             * land_factor;
+        let range_bonus = range_factor
+            * self.config.mountain_height
+            * self.config.mountain_range_strength
+            * land_weight;
+        let mountains = base_mountain + range_bonus;
 
         let interior_mask = land_factor.powf(1.4);
-        let highlands = (ridge_factor * 0.9 + interior_mask * 0.4).clamp(0.0, 1.0)
+        let range_highlands = range_factor * self.config.highland_bonus * 0.6 * interior_mask;
+        let highlands = ((ridge_factor * 0.9 + interior_mask * 0.4).clamp(0.0, 1.0)
             * self.config.highland_bonus
-            * interior_mask;
+            * interior_mask)
+            + range_highlands;
 
         let land_height = sea_level + detail + highlands + mountains + land_factor * 16.0;
         let island_raw = self.fractal_periodic(
@@ -1157,7 +1588,7 @@ impl WorldGenerator {
             theta.sin() + x * 0.1,
             theta.cos() + x * 0.1,
             phi.sin() + z * 0.1,
-            phi.cos() + z * 0.1
+            phi.cos() + z * 0.1,
         ])
     }
 
@@ -1226,7 +1657,13 @@ impl WorldGenerator {
         base_temp - lapse + variation
     }
 
-    fn classify_beach_biome(&self, world_x: f32, world_z: f32, height: f32, temp_c: f32) -> Option<Biome> {
+    fn classify_beach_biome(
+        &self,
+        world_x: f32,
+        world_z: f32,
+        height: f32,
+        temp_c: f32,
+    ) -> Option<Biome> {
         let sea_level = self.config.sea_level;
         let elevation_above_sea = height - sea_level;
 
@@ -1236,7 +1673,8 @@ impl WorldGenerator {
         }
 
         // Calculate distance to deep water and terrain slope
-        let (distance_to_water, avg_slope) = self.calculate_coastal_properties(world_x, world_z, height);
+        let (distance_to_water, avg_slope) =
+            self.calculate_coastal_properties(world_x, world_z, height);
 
         // No beach if no water found within reasonable distance
         if distance_to_water > 150.0 {
@@ -1247,11 +1685,11 @@ impl WorldGenerator {
         // More generous slope tolerance for beach formation
         let slope_factor = (1.0 - avg_slope.min(0.8) / 0.8).max(0.0); // Allow steeper slopes
         let elevation_factor = if elevation_above_sea < 1.0 {
-            1.0  // Full beach potential near sea level
+            1.0 // Full beach potential near sea level
         } else if elevation_above_sea < 4.0 {
-            0.8  // Still good beach potential up to 4 blocks
+            0.8 // Still good beach potential up to 4 blocks
         } else {
-            (1.0 - (elevation_above_sea - 4.0) / 8.0).max(0.0)  // Gradual falloff
+            (1.0 - (elevation_above_sea - 4.0) / 8.0).max(0.0) // Gradual falloff
         };
 
         // Moderate beach width - up to 40 blocks in ideal conditions
@@ -1265,7 +1703,8 @@ impl WorldGenerator {
         // Check if we're within beach zone
         if distance_to_water <= max_beach_width {
             // Add some randomness - not all shores become beaches
-            let beach_probability = self.calculate_beach_probability(world_x, world_z, slope_factor);
+            let beach_probability =
+                self.calculate_beach_probability(world_x, world_z, slope_factor);
 
             // Moderate probability threshold - selective beach formation
             if beach_probability > 0.4 {
@@ -1318,9 +1757,19 @@ impl WorldGenerator {
 
             for (i, &sample_height) in height_samples.iter().enumerate() {
                 let height_diff = (sample_height - height).abs();
-                let distance = if i < 16 { 3.0 } else if i < 32 { 6.0 }
-                              else if i < 48 { 10.0 } else if i < 64 { 20.0 }
-                              else if i < 80 { 40.0 } else { 80.0 };
+                let distance = if i < 16 {
+                    3.0
+                } else if i < 32 {
+                    6.0
+                } else if i < 48 {
+                    10.0
+                } else if i < 64 {
+                    20.0
+                } else if i < 80 {
+                    40.0
+                } else {
+                    80.0
+                };
 
                 if distance > 0.0 {
                     total_slope += height_diff / distance;
@@ -1345,22 +1794,30 @@ impl WorldGenerator {
         let (u, v) = self.normalized_uv(world_x, world_z);
         let beach_noise = self.fractal_periodic(
             &self.detail_noise, // Reuse existing noise
-            u, v,
+            u,
+            v,
             self.config.detail_frequency * 0.5, // Lower frequency for larger, more continuous patches
             2,
             2.0,
-            0.5
+            0.5,
         ) as f32;
 
         // Combine slope factor with noise - but give slope more weight
         // Better slopes = higher base probability
-        let base_probability = slope_factor * 0.85;  // Increased from 0.7
+        let base_probability = slope_factor * 0.85; // Increased from 0.7
         let noise_influence = (beach_noise + 1.0) * 0.5 * 0.3; // Reduced from 0.6 to 0.3
 
         (base_probability + noise_influence).clamp(0.0, 1.0)
     }
 
-    fn classify_biome_at_position(&self, world_x: f32, world_z: f32, height: f32, temp_c: f32, moisture: f32) -> Biome {
+    fn classify_biome_at_position(
+        &self,
+        world_x: f32,
+        world_z: f32,
+        height: f32,
+        temp_c: f32,
+        moisture: f32,
+    ) -> Biome {
         let sea_level = self.config.sea_level;
         let deep_ocean_cutoff = sea_level - self.config.deep_ocean_depth;
         let shallow_ocean_cutoff = sea_level - 1.5;
@@ -1548,7 +2005,8 @@ impl WorldGenerator {
         let major_river = self.major_river_factor(world_x, world_z);
 
         // Show major rivers in a distinct darker blue color
-        if major_river > 0.1 {  // Lower threshold for visibility
+        if major_river > 0.1 {
+            // Lower threshold for visibility
             // Major rivers are dark blue and fully opaque
             color[0] = 5;
             color[1] = 30;
@@ -1685,6 +2143,59 @@ fn generate_continent_sites(seed: u64, count: u32) -> Vec<ContinentSite> {
     }
 
     sites
+}
+
+fn wrap_vec2(v: Vec2) -> Vec2 {
+    Vec2::new(v.x.rem_euclid(1.0), v.y.rem_euclid(1.0))
+}
+
+fn rotate_vec2(vec: Vec2, radians: f32) -> Vec2 {
+    let (sin_a, cos_a) = radians.sin_cos();
+    Vec2::new(vec.x * cos_a - vec.y * sin_a, vec.x * sin_a + vec.y * cos_a)
+}
+
+fn torus_noise(noise: &Perlin, u: f32, v: f32, cycles: f32, extra: f32) -> f32 {
+    if cycles <= f32::EPSILON {
+        return 0.0;
+    }
+
+    let cycles = cycles.max(0.01) as f64;
+    let theta = (u as f64 * cycles) * std::f64::consts::TAU;
+    let phi = (v as f64 * cycles) * std::f64::consts::TAU;
+    let extra_angle = (extra as f64) * std::f64::consts::TAU;
+
+    noise.get([
+        theta.sin(),
+        theta.cos(),
+        phi.sin() + extra_angle.sin() * 0.35,
+        phi.cos() + extra_angle.cos() * 0.35,
+    ]) as f32
+}
+
+fn wrap_index(value: i32, size: i32) -> i32 {
+    let mut result = value % size;
+    if result < 0 {
+        result += size;
+    }
+    result
+}
+
+fn wrap_index_isize(value: isize, size: isize) -> isize {
+    let mut result = value % size;
+    if result < 0 {
+        result += size;
+    }
+    result
+}
+
+fn torus_delta(a: f32, b: f32) -> f32 {
+    let mut diff = b - a;
+    if diff > 0.5 {
+        diff -= 1.0;
+    } else if diff < -0.5 {
+        diff += 1.0;
+    }
+    diff
 }
 
 fn torus_distance(a: f32, b: f32) -> f32 {
