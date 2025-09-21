@@ -833,6 +833,18 @@ impl WorldGenerator {
     fn terrain_components(&self, world_x: f32, world_z: f32) -> TerrainComponents {
         let (u, v) = self.normalized_uv(world_x, world_z);
 
+        // Force ocean borders at left/right edges for seamless wrapping
+        let border_width = 0.03; // 3% of map width on each side
+        let ocean_border_factor = if u < border_width {
+            // Left edge - fade to ocean
+            (u / border_width).clamp(0.0, 1.0)
+        } else if u > (1.0 - border_width) {
+            // Right edge - fade to ocean
+            ((1.0 - u) / border_width).clamp(0.0, 1.0)
+        } else {
+            1.0 // No ocean border modification in the middle
+        };
+
         let continent = self.fractal_periodic(
             &self.continent_noise,
             u,
@@ -851,7 +863,7 @@ impl WorldGenerator {
         land_factor = land_factor.clamp(0.0, 1.0);
 
         let site_mask = self.continent_site_mask(u as f32, v as f32);
-        land_factor = (land_factor * site_mask).clamp(0.0, 1.0);
+        land_factor = (land_factor * site_mask * ocean_border_factor as f32).clamp(0.0, 1.0);
 
         let ocean_factor = 1.0 - land_factor;
         let sea_level = self.config.sea_level;
