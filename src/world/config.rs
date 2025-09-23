@@ -1,0 +1,245 @@
+use bevy::prelude::Resource;
+use serde::{Deserialize, Serialize};
+
+use crate::planet::PlanetConfig;
+
+use super::defaults;
+
+/// Resource tracking the current air temperature at player position.
+#[derive(Resource, Default)]
+pub struct CurrentTemperature {
+    pub fahrenheit: f32,
+    pub celsius: f32,
+    pub(crate) last_chunk_x: i32,
+    pub(crate) last_chunk_z: i32,
+}
+
+impl CurrentTemperature {
+    pub fn new() -> Self {
+        Self {
+            fahrenheit: 70.0,
+            celsius: 21.0,
+            last_chunk_x: i32::MAX,
+            last_chunk_z: i32::MAX,
+        }
+    }
+
+    pub fn update(&mut self, fahrenheit: f32) {
+        self.fahrenheit = fahrenheit;
+        self.celsius = (fahrenheit - 32.0) * 5.0 / 9.0;
+    }
+}
+
+#[derive(Resource, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct WorldGenConfig {
+    pub seed: u64,
+    pub planet_size: u32,
+    pub sea_level: f32,
+    pub ocean_depth: f32,
+    pub deep_ocean_depth: f32,
+    pub continent_threshold: f32,
+    pub continent_power: f32,
+    pub continent_bias: f32,
+    pub continent_count: u32,
+    pub continent_radius: f32,
+    pub continent_edge_power: f32,
+    pub continent_frequency: f64,
+    pub detail_frequency: f64,
+    pub detail_amplitude: f32,
+    pub mountain_frequency: f64,
+    pub mountain_height: f32,
+    pub mountain_threshold: f32,
+    pub mountain_range_count: u32,
+    pub mountain_range_width: f32,
+    pub mountain_range_strength: f32,
+    pub mountain_range_spur_chance: f32,
+    pub mountain_range_spur_strength: f32,
+    pub mountain_range_roughness: f32,
+    pub moisture_frequency: f64,
+    pub equator_temp_c: f32,
+    pub pole_temp_c: f32,
+    pub lapse_rate_c_per_block: f32,
+    pub temperature_variation: f32,
+    pub highland_bonus: f32,
+    pub island_frequency: f64,
+    pub island_threshold: f32,
+    pub island_height: f32,
+    pub island_falloff: f32,
+    pub hydrology_resolution: u32,
+    pub hydrology_rainfall: f32,
+    pub hydrology_rainfall_variance: f32,
+    pub hydrology_rainfall_frequency: f64,
+    pub hydrology_major_river_count: u32,
+    pub hydrology_major_river_boost: f32,
+    pub river_flow_threshold: f32,
+    pub river_depth_scale: f32,
+    pub river_max_depth: f32,
+    pub river_surface_ratio: f32,
+    pub lake_flow_threshold: f32,
+    pub lake_depth: f32,
+    pub lake_shore_blend: f32,
+}
+
+impl Default for WorldGenConfig {
+    fn default() -> Self {
+        use defaults::*;
+
+        Self {
+            seed: SEED,
+            planet_size: PLANET_SIZE,
+            sea_level: SEA_LEVEL,
+            ocean_depth: OCEAN_DEPTH,
+            deep_ocean_depth: DEEP_OCEAN_DEPTH,
+            continent_threshold: CONTINENT_THRESHOLD,
+            continent_power: CONTINENT_POWER,
+            continent_bias: CONTINENT_BIAS,
+            continent_count: CONTINENT_COUNT,
+            continent_radius: CONTINENT_RADIUS,
+            continent_edge_power: CONTINENT_EDGE_POWER,
+            continent_frequency: CONTINENT_FREQUENCY,
+            detail_frequency: DETAIL_FREQUENCY,
+            detail_amplitude: DETAIL_AMPLITUDE,
+            mountain_frequency: MOUNTAIN_FREQUENCY,
+            mountain_height: MOUNTAIN_HEIGHT,
+            mountain_threshold: MOUNTAIN_THRESHOLD,
+            mountain_range_count: MOUNTAIN_RANGE_COUNT,
+            mountain_range_width: MOUNTAIN_RANGE_WIDTH,
+            mountain_range_strength: MOUNTAIN_RANGE_STRENGTH,
+            mountain_range_spur_chance: MOUNTAIN_RANGE_SPUR_CHANCE,
+            mountain_range_spur_strength: MOUNTAIN_RANGE_SPUR_STRENGTH,
+            mountain_range_roughness: MOUNTAIN_RANGE_ROUGHNESS,
+            moisture_frequency: MOISTURE_FREQUENCY,
+            equator_temp_c: EQUATOR_TEMP_C,
+            pole_temp_c: POLE_TEMP_C,
+            lapse_rate_c_per_block: LAPSE_RATE_C_PER_BLOCK,
+            temperature_variation: TEMPERATURE_VARIATION,
+            highland_bonus: HIGHLAND_BONUS,
+            island_frequency: ISLAND_FREQUENCY,
+            island_threshold: ISLAND_THRESHOLD,
+            island_height: ISLAND_HEIGHT,
+            island_falloff: ISLAND_FALLOFF,
+            hydrology_resolution: HYDROLOGY_RESOLUTION,
+            hydrology_rainfall: HYDROLOGY_RAINFALL,
+            hydrology_rainfall_variance: HYDROLOGY_RAINFALL_VARIANCE,
+            hydrology_rainfall_frequency: HYDROLOGY_RAINFALL_FREQUENCY,
+            hydrology_major_river_count: HYDROLOGY_MAJOR_RIVER_COUNT,
+            hydrology_major_river_boost: HYDROLOGY_MAJOR_RIVER_BOOST,
+            river_flow_threshold: RIVER_FLOW_THRESHOLD,
+            river_depth_scale: RIVER_DEPTH_SCALE,
+            river_max_depth: RIVER_MAX_DEPTH,
+            river_surface_ratio: RIVER_SURFACE_RATIO,
+            lake_flow_threshold: LAKE_FLOW_THRESHOLD,
+            lake_depth: LAKE_DEPTH,
+            lake_shore_blend: LAKE_SHORE_BLEND,
+        }
+    }
+}
+
+impl WorldGenConfig {
+    pub fn from_planet_config(config: &PlanetConfig) -> Self {
+        let planet_size = config.size_chunks as u32 * 32;
+
+        // Standard world size for frequency calculations (16384 blocks = 512 chunks)
+        const STANDARD_WORLD_SIZE: f32 = 16384.0;
+
+        // Frequency scaling factor - inverse relationship for scale-invariant features
+        // Larger worlds need higher frequencies to maintain same physical feature size
+        let frequency_scale = planet_size.max(1) as f64 / STANDARD_WORLD_SIZE as f64;
+
+        // SCALE-DEPENDENT: Features that scale with world size
+        // Continent count scales logarithmically - more continents on larger worlds but not linearly
+        let continent_count = ((planet_size as f32).log2() * 0.4)
+            .max(3.0)
+            .min(20.0)
+            .round() as u32;
+        // Continent radius scales proportionally to maintain map appearance
+        let continent_radius = 0.23 * (planet_size as f32 / STANDARD_WORLD_SIZE).sqrt();
+        // Major river count scales with world area
+        let major_river_count = ((planet_size as f32 / STANDARD_WORLD_SIZE).sqrt() * 10.0)
+            .max(5.0)
+            .min(100.0)
+            .round() as u32;
+
+        Self {
+            seed: config.seed,
+            planet_size,
+            sea_level: config.sea_level,
+
+            // SCALE-INVARIANT: Physical ocean dimensions always constant in blocks
+            ocean_depth: 50.0,       // Continental shelf depth ~50 blocks (50m)
+            deep_ocean_depth: 200.0, // Deep ocean ~200 blocks (200m) - scaled for gameplay
+
+            // SCALE-DEPENDENT: Continental distribution
+            continent_threshold: 0.18,
+            continent_power: 0.95,
+            continent_bias: 0.34,
+            continent_count,  // Logarithmic scaling
+            continent_radius, // Proportional scaling
+            continent_edge_power: 1.2,
+            continent_frequency: 0.45 * frequency_scale, // More continents, same physical size
+
+            // SCALE-INVARIANT: Terrain detail (hills, valleys)
+            // Target: hills should be ~50-200 blocks wide regardless of world size
+            // Since we use UV space (0-1), we need to scale frequency by world size
+            // to maintain constant physical feature size
+            detail_frequency: (planet_size as f64 / 100.0), // Hills ~100 blocks wide
+            detail_amplitude: 12.0,                         // Hills always 12 blocks tall
+
+            // SCALE-INVARIANT: Mountain dimensions
+            // Target: mountains should be ~200-800 blocks wide regardless of world size
+            mountain_frequency: (planet_size as f64 / 400.0), // Mountains ~400 blocks wide
+            mountain_height: 250.0, // Mountains rise 250 blocks (250m) - more realistic
+            mountain_threshold: 0.42,
+            mountain_range_count: {
+                let scale = (planet_size as f32 / STANDARD_WORLD_SIZE).max(0.25);
+                let base = 12.0 * scale.powf(0.75);
+                base.round().clamp(4.0, 40.0) as u32
+            },
+            mountain_range_width: 300.0,
+            mountain_range_strength: 2.2,
+            mountain_range_spur_chance: 0.6,
+            mountain_range_spur_strength: 1.5,
+            mountain_range_roughness: 1.25,
+
+            // SCALE-INVARIANT: Biome transitions
+            moisture_frequency: (planet_size as f64 / 300.0), // Biome patches ~300 blocks wide
+
+            // Climate (scale-independent)
+            equator_temp_c: 28.0,
+            pole_temp_c: -30.0,
+            lapse_rate_c_per_block: 0.008,
+            temperature_variation: 3.0,
+
+            // SCALE-INVARIANT: Highland/plateau heights
+            highland_bonus: 20.0, // Highlands always 20 blocks above base
+
+            // SCALE-INVARIANT: Island dimensions
+            island_frequency: (planet_size as f64 / 100.0), // Islands ~100 blocks wide
+            island_threshold: 0.55,
+            island_height: 30.0, // Islands always rise 30 blocks max
+            island_falloff: 2.8,
+
+            // Hydrology
+            hydrology_resolution: ((planet_size as f32 / 16.0).sqrt() as u32)
+                .max(256)
+                .min(4096),
+            hydrology_rainfall: 1.4,
+            hydrology_rainfall_variance: 0.4,
+            hydrology_rainfall_frequency: (planet_size as f64 / 200.0), // Rain patterns ~200 blocks wide
+            hydrology_major_river_count: major_river_count,             // Scale-dependent
+            hydrology_major_river_boost: 6.0,
+
+            // SCALE-INVARIANT: River physical dimensions
+            river_flow_threshold: 120.0,
+            river_depth_scale: 0.06,
+            river_max_depth: 18.0, // Rivers always max 18 blocks deep
+            river_surface_ratio: 0.65,
+
+            // SCALE-INVARIANT: Lake dimensions
+            lake_flow_threshold: 140.0,
+            lake_depth: 15.0, // Lakes average 15 blocks deep (15m) - more realistic
+            lake_shore_blend: 5.0, // Shore transition 5 blocks for gradual slope
+        }
+    }
+}

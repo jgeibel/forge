@@ -1,6 +1,6 @@
-use std::fs;
-use syn::{Item, Expr, parse_file};
 use forge::world::WorldGenConfig;
+use std::fs;
+use syn::{parse_file, Expr, Item};
 
 /// Represents a changed parameter with its new value
 #[derive(Debug, Clone)]
@@ -21,11 +21,18 @@ pub fn detect_changes(working: &WorldGenConfig, defaults: &WorldGenConfig) -> Ve
                     // u64 fields
                     "seed" => format!("{}", working.$field),
                     // u32 fields
-                    "planet_size" | "continent_count" | "mountain_range_count" |
-                    "hydrology_resolution" | "hydrology_major_river_count" => format!("{}", working.$field),
+                    "planet_size"
+                    | "continent_count"
+                    | "mountain_range_count"
+                    | "hydrology_resolution"
+                    | "hydrology_major_river_count" => format!("{}", working.$field),
                     // f64 fields
-                    "continent_frequency" | "detail_frequency" | "mountain_frequency" |
-                    "moisture_frequency" | "island_frequency" | "hydrology_rainfall_frequency" => format!("{}", working.$field),
+                    "continent_frequency"
+                    | "detail_frequency"
+                    | "mountain_frequency"
+                    | "moisture_frequency"
+                    | "island_frequency"
+                    | "hydrology_rainfall_frequency" => format!("{}", working.$field),
                     // f32 fields (everything else)
                     _ => format!("{}", working.$field),
                 };
@@ -98,36 +105,50 @@ pub fn update_source_file(changes: &[ParameterChange]) -> Result<(), String> {
     let source = fs::read_to_string(defaults_path)
         .map_err(|e| format!("Failed to read defaults.rs: {}", e))?;
 
-    let mut syntax_tree = parse_file(&source)
-        .map_err(|e| format!("Failed to parse defaults.rs: {}", e))?;
+    let mut syntax_tree =
+        parse_file(&source).map_err(|e| format!("Failed to parse defaults.rs: {}", e))?;
 
-    // Update the constants in the AST
-    for item in &mut syntax_tree.items {
-        if let Item::Const(item_const) = item {
-            let const_name = item_const.ident.to_string();
+    fn update_const(items: &mut [Item], change: &ParameterChange) -> bool {
+        for item in items {
+            match item {
+                Item::Const(item_const) if item_const.ident == change.const_name => {
+                    let const_name = change.const_name.as_str();
+                    let new_expr = if const_name == "SEED" {
+                        syn::parse_str::<Expr>(&format!("{}_u64", change.new_value))
+                    } else if const_name == "PLANET_SIZE"
+                        || const_name.contains("COUNT")
+                        || const_name == "HYDROLOGY_RESOLUTION"
+                    {
+                        syn::parse_str::<Expr>(&format!("{}_u32", change.new_value))
+                    } else if const_name.contains("FREQUENCY") && !const_name.contains("RAINFALL") {
+                        syn::parse_str::<Expr>(&format!("{}_f64", change.new_value))
+                    } else {
+                        syn::parse_str::<Expr>(&format!("{}_f32", change.new_value))
+                    };
 
-            // Check if this constant needs updating
-            if let Some(change) = changes.iter().find(|c| c.const_name == const_name) {
-                // Parse the new value based on type
-                let new_expr = if const_name == "SEED" {
-                    syn::parse_str::<Expr>(&format!("{}_u64", change.new_value))
-                } else if const_name == "PLANET_SIZE" || const_name.contains("COUNT") ||
-                          const_name == "HYDROLOGY_RESOLUTION" {
-                    syn::parse_str::<Expr>(&format!("{}_u32", change.new_value))
-                } else if const_name.contains("FREQUENCY") && !const_name.contains("RAINFALL") {
-                    syn::parse_str::<Expr>(&format!("{}_f64", change.new_value))
-                } else {
-                    syn::parse_str::<Expr>(&format!("{}_f32", change.new_value))
-                };
-
-                if let Ok(expr) = new_expr {
-                    item_const.expr = Box::new(expr);
+                    if let Ok(expr) = new_expr {
+                        item_const.expr = Box::new(expr);
+                    }
+                    return true;
                 }
+                Item::Mod(item_mod) => {
+                    if let Some((_, items)) = &mut item_mod.content {
+                        if update_const(items, change) {
+                            return true;
+                        }
+                    }
+                }
+                _ => {}
             }
         }
+        false
     }
 
     // Convert the AST back to source code
+    for change in changes {
+        update_const(&mut syntax_tree.items, change);
+    }
+
     let updated_source = prettyplease::unparse(&syntax_tree);
 
     // Write the updated source back to the file
@@ -140,4 +161,8 @@ pub fn update_source_file(changes: &[ParameterChange]) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+fn main() {
+    println!("source_updater is a helper binary; invoke its functions from tooling.");
 }

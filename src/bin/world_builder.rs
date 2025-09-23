@@ -1,4 +1,3 @@
-
 use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::input::ButtonInput;
 use bevy::prelude::*;
@@ -11,8 +10,8 @@ use bevy::ui::{Display, TargetCamera};
 use bevy::window::{PresentMode, PrimaryWindow, WindowRef, WindowResolution};
 
 use forge::planet::{PlanetConfig, PlanetSize};
-use forge::world::{Biome, WorldGenConfig, WorldGenerator};
 use forge::world::metadata::ParameterRegistry;
+use forge::world::{Biome, WorldGenConfig, WorldGenPhase, WorldGenerator};
 use std::collections::HashMap;
 
 mod source_updater;
@@ -56,6 +55,7 @@ fn main() {
                 sync_visualization_highlights,
                 sync_tab_highlights,
                 update_tab_sections,
+                update_phase_status_text,
                 update_value_text,
                 update_selection_text,
                 update_location_popup,
@@ -104,7 +104,7 @@ impl Default for ButtonMaterials {
 struct WorldBuilderState {
     working: WorldGenConfig,
     active: WorldGenConfig,
-    defaults: WorldGenConfig,  // Store the original defaults for comparison
+    defaults: WorldGenConfig, // Store the original defaults for comparison
     generator: WorldGenerator,
     planet_sizes: Vec<PlanetSize>,
     planet_size_index: usize,
@@ -112,7 +112,7 @@ struct WorldBuilderState {
     active_tab: ParameterTab,
     repaint_requested: bool,
     selection: Option<SelectionDetail>,
-    changed_parameters: HashMap<String, bool>,  // Track which parameters have changed
+    changed_parameters: HashMap<String, bool>, // Track which parameters have changed
     parameter_registry: ParameterRegistry,
     // Camera controls for the map
     camera_zoom: f32,
@@ -124,6 +124,8 @@ struct WorldBuilderState {
     popup_world_pos: Option<(f32, f32)>,
     // Detail inspection
     detail_center: Option<Vec2>, // Center of the detail view in world coordinates
+    phase_history: Vec<WorldGenPhase>,
+    phase_history_dirty: bool,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -192,21 +194,33 @@ impl MapVisualization {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ParameterTab {
+    Core,
+    Continents,
     Terrain,
+    Mountains,
+    Climate,
     Islands,
     Hydrology,
 }
 
 impl ParameterTab {
-    const ALL: [Self; 3] = [
+    const ALL: [Self; 7] = [
+        ParameterTab::Core,
+        ParameterTab::Continents,
         ParameterTab::Terrain,
+        ParameterTab::Mountains,
+        ParameterTab::Climate,
         ParameterTab::Islands,
         ParameterTab::Hydrology,
     ];
 
     fn label(&self) -> &'static str {
         match self {
+            ParameterTab::Core => "Core",
+            ParameterTab::Continents => "Continents",
             ParameterTab::Terrain => "Terrain",
+            ParameterTab::Mountains => "Mountains",
+            ParameterTab::Climate => "Climate",
             ParameterTab::Islands => "Islands",
             ParameterTab::Hydrology => "Hydrology",
         }
@@ -229,6 +243,9 @@ struct RegenerateButton;
 
 #[derive(Component)]
 struct SaveToSourceButton;
+
+#[derive(Component)]
+struct PhaseStatusText;
 
 #[derive(Component, Clone, Copy, PartialEq, Eq)]
 struct VisualizationButton {
@@ -302,10 +319,20 @@ struct DetailWindow {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ParameterField {
     SeaLevel,
+    OceanDepth,
+    DeepOceanDepth,
     ContinentCount,
     ContinentFrequency,
     ContinentThreshold,
+    ContinentPower,
+    ContinentBias,
+    ContinentRadius,
+    ContinentEdgePower,
+    DetailFrequency,
+    DetailAmplitude,
+    MountainFrequency,
     MountainHeight,
+    MountainThreshold,
     MountainRangeCount,
     MountainRangeWidth,
     MountainRangeStrength,
@@ -313,6 +340,9 @@ enum ParameterField {
     MountainRangeSpurStrength,
     MountainRangeRoughness,
     MoistureFrequency,
+    EquatorTemperature,
+    PoleTemperature,
+    LapseRate,
     TemperatureVariation,
     HighlandBonus,
     IslandFrequency,
@@ -338,10 +368,20 @@ impl ParameterField {
     fn label(&self) -> &'static str {
         match self {
             ParameterField::SeaLevel => "Sea Level",
+            ParameterField::OceanDepth => "Ocean Depth",
+            ParameterField::DeepOceanDepth => "Deep Ocean Depth",
             ParameterField::ContinentCount => "Continent Count",
             ParameterField::ContinentFrequency => "Continent Frequency",
             ParameterField::ContinentThreshold => "Continent Threshold",
+            ParameterField::ContinentPower => "Continent Power",
+            ParameterField::ContinentBias => "Continent Bias",
+            ParameterField::ContinentRadius => "Continent Radius",
+            ParameterField::ContinentEdgePower => "Edge Power",
+            ParameterField::DetailFrequency => "Detail Frequency",
+            ParameterField::DetailAmplitude => "Detail Amplitude",
+            ParameterField::MountainFrequency => "Mountain Frequency",
             ParameterField::MountainHeight => "Mountain Height",
+            ParameterField::MountainThreshold => "Mountain Threshold",
             ParameterField::MountainRangeCount => "Range Count",
             ParameterField::MountainRangeWidth => "Range Width",
             ParameterField::MountainRangeStrength => "Range Strength",
@@ -349,6 +389,9 @@ impl ParameterField {
             ParameterField::MountainRangeSpurStrength => "Spur Strength",
             ParameterField::MountainRangeRoughness => "Roughness",
             ParameterField::MoistureFrequency => "Moisture Frequency",
+            ParameterField::EquatorTemperature => "Equator Temp (°C)",
+            ParameterField::PoleTemperature => "Pole Temp (°C)",
+            ParameterField::LapseRate => "Lapse Rate (°C/block)",
             ParameterField::TemperatureVariation => "Temperature Variation",
             ParameterField::HighlandBonus => "Highland Bonus",
             ParameterField::IslandFrequency => "Island Frequency",
@@ -376,6 +419,12 @@ impl ParameterField {
             ParameterField::SeaLevel => {
                 config.sea_level = (config.sea_level + delta).clamp(16.0, 200.0);
             }
+            ParameterField::OceanDepth => {
+                config.ocean_depth = (config.ocean_depth + delta).clamp(10.0, 100.0);
+            }
+            ParameterField::DeepOceanDepth => {
+                config.deep_ocean_depth = (config.deep_ocean_depth + delta).clamp(20.0, 200.0);
+            }
             ParameterField::ContinentCount => {
                 let count = (config.continent_count as i32 + delta as i32).clamp(1, 24);
                 config.continent_count = count as u32;
@@ -388,8 +437,34 @@ impl ParameterField {
                 let threshold = (config.continent_threshold + delta).clamp(0.05, 0.6);
                 config.continent_threshold = threshold;
             }
+            ParameterField::ContinentPower => {
+                config.continent_power = (config.continent_power + delta).clamp(0.2, 5.0);
+            }
+            ParameterField::ContinentBias => {
+                config.continent_bias = (config.continent_bias + delta).clamp(0.0, 0.6);
+            }
+            ParameterField::ContinentRadius => {
+                config.continent_radius = (config.continent_radius + delta).clamp(0.05, 0.6);
+            }
+            ParameterField::ContinentEdgePower => {
+                config.continent_edge_power = (config.continent_edge_power + delta).clamp(0.2, 4.0);
+            }
+            ParameterField::DetailFrequency => {
+                let freq = (config.detail_frequency + delta as f64).clamp(1.0, 15.0);
+                config.detail_frequency = freq;
+            }
+            ParameterField::DetailAmplitude => {
+                config.detail_amplitude = (config.detail_amplitude + delta).clamp(1.0, 30.0);
+            }
+            ParameterField::MountainFrequency => {
+                let freq = (config.mountain_frequency + delta as f64).clamp(0.2, 8.0);
+                config.mountain_frequency = freq;
+            }
             ParameterField::MountainHeight => {
                 config.mountain_height = (config.mountain_height + delta).clamp(50.0, 500.0);
+            }
+            ParameterField::MountainThreshold => {
+                config.mountain_threshold = (config.mountain_threshold + delta).clamp(0.1, 0.9);
             }
             ParameterField::MountainRangeCount => {
                 let updated =
@@ -419,6 +494,16 @@ impl ParameterField {
             ParameterField::MoistureFrequency => {
                 let freq = (config.moisture_frequency + delta as f64).clamp(0.1, 6.0);
                 config.moisture_frequency = freq;
+            }
+            ParameterField::EquatorTemperature => {
+                config.equator_temp_c = (config.equator_temp_c + delta).clamp(10.0, 45.0);
+            }
+            ParameterField::PoleTemperature => {
+                config.pole_temp_c = (config.pole_temp_c + delta).clamp(-60.0, 10.0);
+            }
+            ParameterField::LapseRate => {
+                config.lapse_rate_c_per_block =
+                    (config.lapse_rate_c_per_block + delta * 0.001).clamp(0.001, 0.02);
             }
             ParameterField::TemperatureVariation => {
                 config.temperature_variation =
@@ -494,10 +579,20 @@ impl ParameterField {
     fn working_value(&self, config: &WorldGenConfig) -> f64 {
         match self {
             ParameterField::SeaLevel => config.sea_level as f64,
+            ParameterField::OceanDepth => config.ocean_depth as f64,
+            ParameterField::DeepOceanDepth => config.deep_ocean_depth as f64,
             ParameterField::ContinentCount => config.continent_count as f64,
             ParameterField::ContinentFrequency => config.continent_frequency,
             ParameterField::ContinentThreshold => config.continent_threshold as f64,
+            ParameterField::ContinentPower => config.continent_power as f64,
+            ParameterField::ContinentBias => config.continent_bias as f64,
+            ParameterField::ContinentRadius => config.continent_radius as f64,
+            ParameterField::ContinentEdgePower => config.continent_edge_power as f64,
+            ParameterField::DetailFrequency => config.detail_frequency,
+            ParameterField::DetailAmplitude => config.detail_amplitude as f64,
+            ParameterField::MountainFrequency => config.mountain_frequency,
             ParameterField::MountainHeight => config.mountain_height as f64,
+            ParameterField::MountainThreshold => config.mountain_threshold as f64,
             ParameterField::MountainRangeCount => config.mountain_range_count as f64,
             ParameterField::MountainRangeWidth => config.mountain_range_width as f64,
             ParameterField::MountainRangeStrength => config.mountain_range_strength as f64,
@@ -505,6 +600,9 @@ impl ParameterField {
             ParameterField::MountainRangeSpurStrength => config.mountain_range_spur_strength as f64,
             ParameterField::MountainRangeRoughness => config.mountain_range_roughness as f64,
             ParameterField::MoistureFrequency => config.moisture_frequency,
+            ParameterField::EquatorTemperature => config.equator_temp_c as f64,
+            ParameterField::PoleTemperature => config.pole_temp_c as f64,
+            ParameterField::LapseRate => config.lapse_rate_c_per_block as f64,
             ParameterField::TemperatureVariation => config.temperature_variation as f64,
             ParameterField::HighlandBonus => config.highland_bonus as f64,
             ParameterField::IslandFrequency => config.island_frequency,
@@ -530,10 +628,20 @@ impl ParameterField {
     fn format_value(&self, config: &WorldGenConfig) -> String {
         match self {
             ParameterField::SeaLevel => format!("{:.1}", config.sea_level),
+            ParameterField::OceanDepth => format!("{:.1}", config.ocean_depth),
+            ParameterField::DeepOceanDepth => format!("{:.1}", config.deep_ocean_depth),
             ParameterField::ContinentCount => format!("{}", config.continent_count),
             ParameterField::ContinentFrequency => format!("{:.2}", config.continent_frequency),
             ParameterField::ContinentThreshold => format!("{:.2}", config.continent_threshold),
+            ParameterField::ContinentPower => format!("{:.2}", config.continent_power),
+            ParameterField::ContinentBias => format!("{:.2}", config.continent_bias),
+            ParameterField::ContinentRadius => format!("{:.2}", config.continent_radius),
+            ParameterField::ContinentEdgePower => format!("{:.2}", config.continent_edge_power),
+            ParameterField::DetailFrequency => format!("{:.2}", config.detail_frequency),
+            ParameterField::DetailAmplitude => format!("{:.1}", config.detail_amplitude),
+            ParameterField::MountainFrequency => format!("{:.2}", config.mountain_frequency),
             ParameterField::MountainHeight => format!("{:.1}", config.mountain_height),
+            ParameterField::MountainThreshold => format!("{:.2}", config.mountain_threshold),
             ParameterField::MountainRangeCount => format!("{}", config.mountain_range_count),
             ParameterField::MountainRangeWidth => {
                 format!("{:.0}", config.mountain_range_width)
@@ -551,6 +659,9 @@ impl ParameterField {
                 format!("{:.2}", config.mountain_range_roughness)
             }
             ParameterField::MoistureFrequency => format!("{:.2}", config.moisture_frequency),
+            ParameterField::EquatorTemperature => format!("{:.1}", config.equator_temp_c),
+            ParameterField::PoleTemperature => format!("{:.1}", config.pole_temp_c),
+            ParameterField::LapseRate => format!("{:.3}", config.lapse_rate_c_per_block),
             ParameterField::TemperatureVariation => format!("{:.1}", config.temperature_variation),
             ParameterField::HighlandBonus => format!("{:.1}", config.highland_bonus),
             ParameterField::IslandFrequency => format!("{:.2}", config.island_frequency),
@@ -589,15 +700,28 @@ impl ParameterField {
 
     fn epsilon(&self) -> f64 {
         match self {
+            ParameterField::SeaLevel => 0.01,
+            ParameterField::OceanDepth => 0.01,
+            ParameterField::DeepOceanDepth => 0.01,
             ParameterField::ContinentCount => 0.5,
+            ParameterField::ContinentFrequency => 0.001,
             ParameterField::IslandThreshold => 0.01,
             ParameterField::IslandFalloff => 0.01,
+            ParameterField::ContinentThreshold => 0.001,
+            ParameterField::ContinentPower => 0.001,
+            ParameterField::ContinentBias => 0.001,
+            ParameterField::ContinentRadius => 0.001,
+            ParameterField::ContinentEdgePower => 0.001,
+            ParameterField::DetailFrequency => 0.001,
+            ParameterField::DetailAmplitude => 0.01,
+            ParameterField::MountainFrequency => 0.001,
             ParameterField::MountainRangeCount => 0.5,
             ParameterField::MountainRangeWidth => 0.1,
             ParameterField::MountainRangeStrength => 0.001,
             ParameterField::MountainRangeSpurChance => 0.001,
             ParameterField::MountainRangeSpurStrength => 0.001,
             ParameterField::MountainRangeRoughness => 0.001,
+            ParameterField::MountainThreshold => 0.001,
             ParameterField::HydrologyResolution => 1.0,
             ParameterField::HydrologyRainfall => 0.001,
             ParameterField::HydrologyRainfallVariance => 0.001,
@@ -611,6 +735,12 @@ impl ParameterField {
             ParameterField::LakeFlowThreshold => 1.0,
             ParameterField::LakeDepth => 0.05,
             ParameterField::LakeShoreBlend => 0.05,
+            ParameterField::MoistureFrequency => 0.001,
+            ParameterField::EquatorTemperature => 0.05,
+            ParameterField::PoleTemperature => 0.05,
+            ParameterField::LapseRate => 0.0001,
+            ParameterField::TemperatureVariation => 0.01,
+            ParameterField::HighlandBonus => 0.05,
             _ => 0.005,
         }
     }
@@ -618,10 +748,20 @@ impl ParameterField {
     fn description(&self) -> &'static str {
         match self {
             ParameterField::SeaLevel => "Sea level height in blocks (meters); ocean surface elevation.",
+            ParameterField::OceanDepth => "Depth of continental shelf regions below sea level in blocks (meters).",
+            ParameterField::DeepOceanDepth => "Depth of abyssal ocean trenches in blocks (meters).",
             ParameterField::ContinentCount => "Target number of large landmasses; higher values split the noise into more continents.",
             ParameterField::ContinentFrequency => "Low-frequency noise controlling continent placement; higher values create more variation per unit area.",
             ParameterField::ContinentThreshold => "Cutoff for land vs ocean; lower thresholds produce more land and wider continents.",
+            ParameterField::ContinentPower => "Exponent applied to continent noise; higher values emphasize the interiors of continents.",
+            ParameterField::ContinentBias => "Offset added before thresholding; raises this value to favor land creation.",
+            ParameterField::ContinentRadius => "Radius of Poisson disk sites influencing continent interiors in normalized map space.",
+            ParameterField::ContinentEdgePower => "Controls how sharply continent influence fades toward coastlines.",
+            ParameterField::DetailFrequency => "Frequency of mid-scale terrain detail noise; higher values create smaller hills and ridges.",
+            ParameterField::DetailAmplitude => "Amplitude of detail noise in blocks (meters); increases contrast in rolling terrain.",
+            ParameterField::MountainFrequency => "Base frequency of mountain noise; adjust to cluster mountains closer together or spread them out.",
             ParameterField::MountainHeight => "Peak height above terrain in blocks (meters); realistic mountain elevation.",
+            ParameterField::MountainThreshold => "Noise threshold for promoting terrain into mountains; raise to reduce mountain coverage.",
             ParameterField::MountainRangeCount => "Number of long mountain belts seeded across the world; larger planets can support more distinct ranges.",
             ParameterField::MountainRangeWidth => "Average width of a mountain belt in blocks (meters); controls how broad each range appears on the map.",
             ParameterField::MountainRangeStrength => "Extra elevation multiplier applied along the belt centerline; higher values exaggerate relief inside a range.",
@@ -629,6 +769,9 @@ impl ParameterField {
             ParameterField::MountainRangeSpurStrength => "Relative elevation boost applied to spur ridges compared to the main belt.",
             ParameterField::MountainRangeRoughness => "Noise amplitude used along the belt to create bulges, gaps, and braided crests.",
             ParameterField::MoistureFrequency => "Frequency of the moisture noise used for biomes; higher values add more variation.",
+            ParameterField::EquatorTemperature => "Baseline near-sea-level temperature at the equator in °C.",
+            ParameterField::PoleTemperature => "Baseline near-sea-level temperature at the poles in °C.",
+            ParameterField::LapseRate => "Temperature drop per block (meter) of elevation gain.",
             ParameterField::TemperatureVariation => "Amplitude of the temperature noise layered over the latitude gradient.",
             ParameterField::HighlandBonus => "Plateau elevation in blocks (meters); raises continental interiors.",
             ParameterField::IslandFrequency => "Noise frequency used for standalone islands; higher values create more island opportunities.",
@@ -654,10 +797,20 @@ impl ParameterField {
     fn range_hint(&self) -> &'static str {
         match self {
             ParameterField::SeaLevel => "16 - 200 blocks (meters)",
+            ParameterField::OceanDepth => "10 - 100 blocks (meters)",
+            ParameterField::DeepOceanDepth => "20 - 200 blocks (meters)",
             ParameterField::ContinentCount => "1 - 24",
             ParameterField::ContinentFrequency => "0.1 - 4.0",
             ParameterField::ContinentThreshold => "0.05 - 0.60",
+            ParameterField::ContinentPower => "0.2 - 5.0",
+            ParameterField::ContinentBias => "0.00 - 0.60",
+            ParameterField::ContinentRadius => "0.05 - 0.60",
+            ParameterField::ContinentEdgePower => "0.2 - 4.0",
+            ParameterField::DetailFrequency => "1.0 - 15.0",
+            ParameterField::DetailAmplitude => "1 - 30 blocks (meters)",
+            ParameterField::MountainFrequency => "0.2 - 8.0",
             ParameterField::MountainHeight => "50 - 500 blocks (meters)",
+            ParameterField::MountainThreshold => "0.1 - 0.9",
             ParameterField::MountainRangeCount => "0 - 60 ranges",
             ParameterField::MountainRangeWidth => "40 - 800 blocks (meters)",
             ParameterField::MountainRangeStrength => "0.0 - 3.0",
@@ -665,6 +818,9 @@ impl ParameterField {
             ParameterField::MountainRangeSpurStrength => "0.0 - 1.5",
             ParameterField::MountainRangeRoughness => "0.0 - 2.0",
             ParameterField::MoistureFrequency => "0.1 - 6.0",
+            ParameterField::EquatorTemperature => "10 - 45 °C",
+            ParameterField::PoleTemperature => "-60 - 10 °C",
+            ParameterField::LapseRate => "0.001 - 0.020 °C/block",
             ParameterField::TemperatureVariation => "0 - 20",
             ParameterField::HighlandBonus => "0 - 50 blocks (meters)",
             ParameterField::IslandFrequency => "0.1 - 8.0",
@@ -690,10 +846,20 @@ impl ParameterField {
     fn get_field_name(&self) -> &'static str {
         match self {
             ParameterField::SeaLevel => "sea_level",
+            ParameterField::OceanDepth => "ocean_depth",
+            ParameterField::DeepOceanDepth => "deep_ocean_depth",
             ParameterField::ContinentCount => "continent_count",
             ParameterField::ContinentFrequency => "continent_frequency",
             ParameterField::ContinentThreshold => "continent_threshold",
+            ParameterField::ContinentPower => "continent_power",
+            ParameterField::ContinentBias => "continent_bias",
+            ParameterField::ContinentRadius => "continent_radius",
+            ParameterField::ContinentEdgePower => "continent_edge_power",
+            ParameterField::DetailFrequency => "detail_frequency",
+            ParameterField::DetailAmplitude => "detail_amplitude",
+            ParameterField::MountainFrequency => "mountain_frequency",
             ParameterField::MountainHeight => "mountain_height",
+            ParameterField::MountainThreshold => "mountain_threshold",
             ParameterField::MountainRangeCount => "mountain_range_count",
             ParameterField::MountainRangeWidth => "mountain_range_width",
             ParameterField::MountainRangeStrength => "mountain_range_strength",
@@ -701,6 +867,9 @@ impl ParameterField {
             ParameterField::MountainRangeSpurStrength => "mountain_range_spur_strength",
             ParameterField::MountainRangeRoughness => "mountain_range_roughness",
             ParameterField::MoistureFrequency => "moisture_frequency",
+            ParameterField::EquatorTemperature => "equator_temp_c",
+            ParameterField::PoleTemperature => "pole_temp_c",
+            ParameterField::LapseRate => "lapse_rate_c_per_block",
             ParameterField::TemperatureVariation => "temperature_variation",
             ParameterField::HighlandBonus => "highland_bonus",
             ParameterField::IslandFrequency => "island_frequency",
@@ -730,11 +899,31 @@ impl ParameterField {
     }
 }
 
-const TERRAIN_FIELDS: &[ParameterField] = &[
+const CORE_FIELDS: &[ParameterField] = &[
     ParameterField::SeaLevel,
+    ParameterField::OceanDepth,
+    ParameterField::DeepOceanDepth,
+];
+
+const CONTINENT_FIELDS: &[ParameterField] = &[
     ParameterField::ContinentCount,
     ParameterField::ContinentFrequency,
     ParameterField::ContinentThreshold,
+    ParameterField::ContinentPower,
+    ParameterField::ContinentBias,
+    ParameterField::ContinentRadius,
+    ParameterField::ContinentEdgePower,
+];
+
+const TERRAIN_FIELDS: &[ParameterField] = &[
+    ParameterField::DetailFrequency,
+    ParameterField::DetailAmplitude,
+    ParameterField::HighlandBonus,
+];
+
+const MOUNTAIN_FIELDS: &[ParameterField] = &[
+    ParameterField::MountainFrequency,
+    ParameterField::MountainThreshold,
     ParameterField::MountainHeight,
     ParameterField::MountainRangeCount,
     ParameterField::MountainRangeWidth,
@@ -742,9 +931,14 @@ const TERRAIN_FIELDS: &[ParameterField] = &[
     ParameterField::MountainRangeSpurChance,
     ParameterField::MountainRangeSpurStrength,
     ParameterField::MountainRangeRoughness,
+];
+
+const CLIMATE_FIELDS: &[ParameterField] = &[
     ParameterField::MoistureFrequency,
+    ParameterField::EquatorTemperature,
+    ParameterField::PoleTemperature,
+    ParameterField::LapseRate,
     ParameterField::TemperatureVariation,
-    ParameterField::HighlandBonus,
 ];
 
 const ISLAND_FIELDS: &[ParameterField] = &[
@@ -789,7 +983,11 @@ fn setup(
     let visualization = MapVisualization::Biomes;
 
     let active = working.clone();
-    let generator = WorldGenerator::new(active.clone());
+    let mut initial_phases = Vec::new();
+    let generator = WorldGenerator::with_progress(active.clone(), |phase| {
+        info!("Initial world generation phase: {:?}", phase);
+        initial_phases.push(phase);
+    });
 
     let planet_size_index = find_closest_size_index(&planet_sizes, working.planet_size as i32);
 
@@ -805,7 +1003,7 @@ fn setup(
         planet_sizes,
         planet_size_index,
         visualization,
-        active_tab: ParameterTab::Terrain,
+        active_tab: ParameterTab::Core,
         repaint_requested: true,
         selection: None,
         changed_parameters,
@@ -817,6 +1015,8 @@ fn setup(
         show_popup: false,
         popup_world_pos: None,
         detail_center: None,
+        phase_history: initial_phases,
+        phase_history_dirty: true,
     });
 
     // Map texture and sprite
@@ -1119,6 +1319,22 @@ fn build_control_panel(
                     });
             });
 
+        parent.spawn((
+            TextBundle::from_section(
+                "Last generation phases: (pending)",
+                TextStyle {
+                    font_size: 14.0,
+                    color: Color::srgb(0.74, 0.78, 0.9),
+                    ..default()
+                },
+            )
+            .with_style(Style {
+                margin: UiRect::bottom(Val::Px(8.0)),
+                ..default()
+            }),
+            PhaseStatusText,
+        ));
+
         // Main content area - World Parameters
         parent
             .spawn(NodeBundle {
@@ -1283,23 +1499,51 @@ fn build_control_panel(
                                 spawn_tab_section(
                                     sections,
                                     materials,
+                                    ParameterTab::Core,
+                                    CORE_FIELDS,
+                                    ParameterTab::Core,
+                                );
+                                spawn_tab_section(
+                                    sections,
+                                    materials,
+                                    ParameterTab::Continents,
+                                    CONTINENT_FIELDS,
+                                    ParameterTab::Core,
+                                );
+                                spawn_tab_section(
+                                    sections,
+                                    materials,
                                     ParameterTab::Terrain,
                                     TERRAIN_FIELDS,
-                                    ParameterTab::Terrain,
+                                    ParameterTab::Core,
+                                );
+                                spawn_tab_section(
+                                    sections,
+                                    materials,
+                                    ParameterTab::Mountains,
+                                    MOUNTAIN_FIELDS,
+                                    ParameterTab::Core,
+                                );
+                                spawn_tab_section(
+                                    sections,
+                                    materials,
+                                    ParameterTab::Climate,
+                                    CLIMATE_FIELDS,
+                                    ParameterTab::Core,
                                 );
                                 spawn_tab_section(
                                     sections,
                                     materials,
                                     ParameterTab::Islands,
                                     ISLAND_FIELDS,
-                                    ParameterTab::Terrain,
+                                    ParameterTab::Core,
                                 );
                                 spawn_tab_section(
                                     sections,
                                     materials,
                                     ParameterTab::Hydrology,
                                     HYDROLOGY_FIELDS,
-                                    ParameterTab::Terrain,
+                                    ParameterTab::Core,
                                 );
                             });
                     });
@@ -1326,10 +1570,20 @@ fn button_bundle(materials: &ButtonMaterials, size: Vec2) -> ButtonBundle {
 fn field_step(field: ParameterField) -> f32 {
     match field {
         ParameterField::SeaLevel => 2.0,
+        ParameterField::OceanDepth => 2.0,
+        ParameterField::DeepOceanDepth => 2.0,
         ParameterField::ContinentCount => 1.0,
         ParameterField::ContinentFrequency => 0.05,
         ParameterField::ContinentThreshold => 0.02,
+        ParameterField::ContinentPower => 0.05,
+        ParameterField::ContinentBias => 0.01,
+        ParameterField::ContinentRadius => 0.01,
+        ParameterField::ContinentEdgePower => 0.05,
+        ParameterField::DetailFrequency => 0.1,
+        ParameterField::DetailAmplitude => 1.0,
+        ParameterField::MountainFrequency => 0.1,
         ParameterField::MountainHeight => 4.0,
+        ParameterField::MountainThreshold => 0.02,
         ParameterField::MountainRangeCount => 1.0,
         ParameterField::MountainRangeWidth => 10.0,
         ParameterField::MountainRangeStrength => 0.1,
@@ -1337,6 +1591,9 @@ fn field_step(field: ParameterField) -> f32 {
         ParameterField::MountainRangeSpurStrength => 0.05,
         ParameterField::MountainRangeRoughness => 0.05,
         ParameterField::MoistureFrequency => 0.05,
+        ParameterField::EquatorTemperature => 1.0,
+        ParameterField::PoleTemperature => 1.0,
+        ParameterField::LapseRate => 1.0,
         ParameterField::TemperatureVariation => 0.5,
         ParameterField::HighlandBonus => 2.0,
         ParameterField::IslandFrequency => 0.1,
@@ -1556,7 +1813,9 @@ fn handle_parameter_buttons(
                 // Check if this parameter has changed from defaults
                 let field_name = button.field.get_field_name();
                 let is_changed = button.field.is_changed(&state.working, &state.defaults);
-                state.changed_parameters.insert(field_name.to_string(), is_changed);
+                state
+                    .changed_parameters
+                    .insert(field_name.to_string(), is_changed);
             }
             Interaction::Hovered => *color = materials.hovered,
             Interaction::None => *color = materials.normal,
@@ -1707,6 +1966,34 @@ fn update_tab_sections(state: Res<WorldBuilderState>, mut query: Query<(&TabSect
             Display::None
         };
     }
+}
+
+fn update_phase_status_text(
+    mut state: ResMut<WorldBuilderState>,
+    mut query: Query<&mut Text, With<PhaseStatusText>>,
+) {
+    if !state.phase_history_dirty {
+        return;
+    }
+
+    state.phase_history_dirty = false;
+
+    let Ok(mut text) = query.get_single_mut() else {
+        return;
+    };
+
+    let content = if state.phase_history.is_empty() {
+        "Last generation phases: (pending)".to_string()
+    } else {
+        let phases: Vec<&'static str> = state
+            .phase_history
+            .iter()
+            .map(|phase| phase_display_name(*phase))
+            .collect();
+        format!("Last generation phases: {}", phases.join(" → "))
+    };
+
+    text.sections[0].value = content;
 }
 
 fn handle_regenerate_button(
@@ -2066,7 +2353,10 @@ fn handle_save_to_source_button(
                     if let Err(err) = source_updater::update_source_file(&changes) {
                         warn!("Failed to update source file: {err}");
                     } else {
-                        info!("Successfully updated src/world/defaults.rs with {} changes", changes.len());
+                        info!(
+                            "Successfully updated src/world/defaults.rs with {} changes",
+                            changes.len()
+                        );
                     }
                 }
             }
@@ -2190,7 +2480,14 @@ fn redraw_map_when_needed(
 
     if rebuild_generator {
         state.active = state.working.clone();
-        state.generator = WorldGenerator::new(state.active.clone());
+        let active_config = state.active.clone();
+        let mut phases = Vec::new();
+        state.generator = WorldGenerator::with_progress(active_config, |phase| {
+            info!("World generation phase: {:?}", phase);
+            phases.push(phase);
+        });
+        state.phase_history = phases;
+        state.phase_history_dirty = true;
         if let Some(selection) = state.selection {
             state.selection = Some(refresh_selection(
                 &state.generator,
@@ -2700,6 +2997,19 @@ fn major_river_color(generator: &WorldGenerator, world_x: f32, world_z: f32) -> 
     ]
 }
 
+fn phase_display_name(phase: WorldGenPhase) -> &'static str {
+    match phase {
+        WorldGenPhase::Core => "Core",
+        WorldGenPhase::Continents => "Continents",
+        WorldGenPhase::Terrain => "Terrain",
+        WorldGenPhase::Mountains => "Mountains",
+        WorldGenPhase::Climate => "Climate",
+        WorldGenPhase::Islands => "Islands",
+        WorldGenPhase::Hydrology => "Hydrology",
+        WorldGenPhase::Finalize => "Finalize",
+    }
+}
+
 fn lerp_rgb(a: [u8; 3], b: [u8; 3], t: f32) -> [u8; 3] {
     let t = t.clamp(0.0, 1.0);
     [
@@ -2758,6 +3068,10 @@ fn reset_parameter(field: ParameterField, state: &mut WorldBuilderState) {
     let defaults = WorldGenConfig::default();
     match field {
         ParameterField::SeaLevel => state.working.sea_level = defaults.sea_level,
+        ParameterField::OceanDepth => state.working.ocean_depth = defaults.ocean_depth,
+        ParameterField::DeepOceanDepth => {
+            state.working.deep_ocean_depth = defaults.deep_ocean_depth
+        }
         ParameterField::ContinentCount => state.working.continent_count = defaults.continent_count,
         ParameterField::ContinentFrequency => {
             state.working.continent_frequency = defaults.continent_frequency
@@ -2765,7 +3079,27 @@ fn reset_parameter(field: ParameterField, state: &mut WorldBuilderState) {
         ParameterField::ContinentThreshold => {
             state.working.continent_threshold = defaults.continent_threshold
         }
+        ParameterField::ContinentPower => state.working.continent_power = defaults.continent_power,
+        ParameterField::ContinentBias => state.working.continent_bias = defaults.continent_bias,
+        ParameterField::ContinentRadius => {
+            state.working.continent_radius = defaults.continent_radius
+        }
+        ParameterField::ContinentEdgePower => {
+            state.working.continent_edge_power = defaults.continent_edge_power
+        }
+        ParameterField::DetailFrequency => {
+            state.working.detail_frequency = defaults.detail_frequency
+        }
+        ParameterField::DetailAmplitude => {
+            state.working.detail_amplitude = defaults.detail_amplitude
+        }
+        ParameterField::MountainFrequency => {
+            state.working.mountain_frequency = defaults.mountain_frequency
+        }
         ParameterField::MountainHeight => state.working.mountain_height = defaults.mountain_height,
+        ParameterField::MountainThreshold => {
+            state.working.mountain_threshold = defaults.mountain_threshold
+        }
         ParameterField::MountainRangeCount => {
             state.working.mountain_range_count = defaults.mountain_range_count
         }
@@ -2786,6 +3120,13 @@ fn reset_parameter(field: ParameterField, state: &mut WorldBuilderState) {
         }
         ParameterField::MoistureFrequency => {
             state.working.moisture_frequency = defaults.moisture_frequency
+        }
+        ParameterField::EquatorTemperature => {
+            state.working.equator_temp_c = defaults.equator_temp_c
+        }
+        ParameterField::PoleTemperature => state.working.pole_temp_c = defaults.pole_temp_c,
+        ParameterField::LapseRate => {
+            state.working.lapse_rate_c_per_block = defaults.lapse_rate_c_per_block
         }
         ParameterField::TemperatureVariation => {
             state.working.temperature_variation = defaults.temperature_variation

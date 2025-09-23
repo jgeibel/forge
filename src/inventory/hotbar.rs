@@ -192,7 +192,7 @@ pub fn setup_hotbar_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                     },
                     HotbarSlotIcon,
                 ));
-                
+
                 // Quantity text (bottom-right corner)
                 slot.spawn((
                     TextBundle {
@@ -216,7 +216,7 @@ pub fn setup_hotbar_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                 ));
             });
         }
-        
+
         // Selection indicator
         parent.spawn((
             NodeBundle {
