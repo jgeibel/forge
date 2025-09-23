@@ -1,5 +1,3 @@
-use std::fs;
-use std::path::Path;
 
 use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::input::ButtonInput;
@@ -14,10 +12,13 @@ use bevy::window::{PresentMode, PrimaryWindow, WindowRef, WindowResolution};
 
 use forge::planet::{PlanetConfig, PlanetSize};
 use forge::world::{Biome, WorldGenConfig, WorldGenerator};
+use forge::world::metadata::ParameterRegistry;
+use std::collections::HashMap;
+
+mod source_updater;
 
 const MAP_WIDTH: u32 = 512; // Lower initial resolution for faster rendering
 const MAP_HEIGHT: u32 = 256; // Lower initial resolution for faster rendering
-const DEFAULTS_PATH: &str = "docs/world_builder_defaults.json";
 
 fn main() {
     App::new()
@@ -38,26 +39,39 @@ fn main() {
         .add_systems(
             Update,
             (
+                // Button handlers (max 10 systems per tuple in Bevy)
                 handle_parameter_buttons,
                 handle_parameter_reset_buttons,
                 handle_world_size_buttons,
                 handle_tab_buttons,
                 handle_visualization_buttons,
+                handle_regenerate_button,
+                handle_save_to_source_button,
+            ),
+        )
+        .add_systems(
+            Update,
+            (
+                // UI updates
                 sync_visualization_highlights,
                 sync_tab_highlights,
                 update_tab_sections,
-                handle_regenerate_button,
-                handle_save_defaults_button,
+                update_value_text,
+                update_selection_text,
+                update_location_popup,
+            ),
+        )
+        .add_systems(
+            Update,
+            (
+                // Map interactions
                 handle_map_zoom,
                 handle_map_pan,
                 handle_map_click,
                 handle_scroll_events,
-                update_value_text,
-                update_selection_text,
                 apply_selection_marker,
                 redraw_map_when_needed,
                 update_detail_view,
-                update_location_popup,
             ),
         )
         .run();
@@ -90,6 +104,7 @@ impl Default for ButtonMaterials {
 struct WorldBuilderState {
     working: WorldGenConfig,
     active: WorldGenConfig,
+    defaults: WorldGenConfig,  // Store the original defaults for comparison
     generator: WorldGenerator,
     planet_sizes: Vec<PlanetSize>,
     planet_size_index: usize,
@@ -97,6 +112,8 @@ struct WorldBuilderState {
     active_tab: ParameterTab,
     repaint_requested: bool,
     selection: Option<SelectionDetail>,
+    changed_parameters: HashMap<String, bool>,  // Track which parameters have changed
+    parameter_registry: ParameterRegistry,
     // Camera controls for the map
     camera_zoom: f32,
     camera_translation: Vec2,
@@ -196,12 +213,6 @@ impl ParameterTab {
     }
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
-struct StoredDefaults {
-    config: WorldGenConfig,
-    visualization: MapVisualization,
-}
-
 #[derive(Component, Clone, Copy)]
 struct ParameterButton {
     field: ParameterField,
@@ -217,7 +228,7 @@ struct ParameterResetButton {
 struct RegenerateButton;
 
 #[derive(Component)]
-struct SaveDefaultsButton;
+struct SaveToSourceButton;
 
 #[derive(Component, Clone, Copy, PartialEq, Eq)]
 struct VisualizationButton {
@@ -675,6 +686,48 @@ impl ParameterField {
             ParameterField::LakeShoreBlend => "0 - 10 blocks (meters)",
         }
     }
+
+    fn get_field_name(&self) -> &'static str {
+        match self {
+            ParameterField::SeaLevel => "sea_level",
+            ParameterField::ContinentCount => "continent_count",
+            ParameterField::ContinentFrequency => "continent_frequency",
+            ParameterField::ContinentThreshold => "continent_threshold",
+            ParameterField::MountainHeight => "mountain_height",
+            ParameterField::MountainRangeCount => "mountain_range_count",
+            ParameterField::MountainRangeWidth => "mountain_range_width",
+            ParameterField::MountainRangeStrength => "mountain_range_strength",
+            ParameterField::MountainRangeSpurChance => "mountain_range_spur_chance",
+            ParameterField::MountainRangeSpurStrength => "mountain_range_spur_strength",
+            ParameterField::MountainRangeRoughness => "mountain_range_roughness",
+            ParameterField::MoistureFrequency => "moisture_frequency",
+            ParameterField::TemperatureVariation => "temperature_variation",
+            ParameterField::HighlandBonus => "highland_bonus",
+            ParameterField::IslandFrequency => "island_frequency",
+            ParameterField::IslandThreshold => "island_threshold",
+            ParameterField::IslandHeight => "island_height",
+            ParameterField::IslandFalloff => "island_falloff",
+            ParameterField::HydrologyResolution => "hydrology_resolution",
+            ParameterField::HydrologyRainfall => "hydrology_rainfall",
+            ParameterField::HydrologyRainfallVariance => "hydrology_rainfall_variance",
+            ParameterField::HydrologyRainfallFrequency => "hydrology_rainfall_frequency",
+            ParameterField::HydrologyMajorRiverCount => "hydrology_major_river_count",
+            ParameterField::HydrologyMajorRiverBoost => "hydrology_major_river_boost",
+            ParameterField::RiverFlowThreshold => "river_flow_threshold",
+            ParameterField::RiverDepthScale => "river_depth_scale",
+            ParameterField::RiverMaxDepth => "river_max_depth",
+            ParameterField::RiverSurfaceRatio => "river_surface_ratio",
+            ParameterField::LakeFlowThreshold => "lake_flow_threshold",
+            ParameterField::LakeDepth => "lake_depth",
+            ParameterField::LakeShoreBlend => "lake_shore_blend",
+        }
+    }
+
+    fn is_changed(&self, working: &WorldGenConfig, defaults: &WorldGenConfig) -> bool {
+        let working_val = self.working_value(working);
+        let default_val = self.working_value(defaults);
+        (working_val - default_val).abs() > self.epsilon()
+    }
 }
 
 const TERRAIN_FIELDS: &[ParameterField] = &[
@@ -732,24 +785,22 @@ fn setup(
         PlanetSize::Huge,
     ];
 
-    let (working, visualization) = load_defaults()
-        .map(|defaults| (defaults.config, defaults.visualization))
-        .unwrap_or_else(|| {
-            let base_planet = PlanetConfig::default();
-            let config = WorldGenConfig::from_planet_config(&base_planet);
-            (config, MapVisualization::Biomes)
-        });
+    let working = WorldGenConfig::default();
+    let visualization = MapVisualization::Biomes;
 
     let active = working.clone();
     let generator = WorldGenerator::new(active.clone());
 
     let planet_size_index = find_closest_size_index(&planet_sizes, working.planet_size as i32);
 
-    let planet_size = active.planet_size as f32;
+    let defaults = WorldGenConfig::default();
+    let changed_parameters = HashMap::new();
+    let parameter_registry = ParameterRegistry::new();
 
     commands.insert_resource(WorldBuilderState {
         working,
         active,
+        defaults,
         generator,
         planet_sizes,
         planet_size_index,
@@ -757,6 +808,8 @@ fn setup(
         active_tab: ParameterTab::Terrain,
         repaint_requested: true,
         selection: None,
+        changed_parameters,
+        parameter_registry,
         camera_zoom: 2.0, // Start zoomed in to fill the window
         camera_translation: Vec2::ZERO,
         is_panning: false,
@@ -1035,29 +1088,30 @@ fn build_control_panel(
                                 ));
                             });
 
+                        // Save to Source button
                         buttons
                             .spawn(ButtonBundle {
                                 style: Style {
-                                    width: Val::Px(140.0),
-                                    height: Val::Px(38.0),
+                                    width: Val::Px(120.0),
+                                    height: Val::Px(28.0),
                                     justify_content: JustifyContent::Center,
                                     align_items: AlignItems::Center,
                                     border: UiRect::all(Val::Px(1.0)),
                                     ..default()
                                 },
                                 background_color: BackgroundColor(Color::srgba(
-                                    0.12, 0.18, 0.25, 0.95,
+                                    0.18, 0.12, 0.25, 0.95,
                                 )),
-                                border_color: BorderColor(Color::srgba(0.25, 0.35, 0.45, 0.8)),
+                                border_color: BorderColor(Color::srgba(0.45, 0.25, 0.45, 0.8)),
                                 ..default()
                             })
-                            .insert(SaveDefaultsButton)
+                            .insert(SaveToSourceButton)
                             .with_children(|b| {
                                 b.spawn(TextBundle::from_section(
-                                    "SAVE DEFAULTS",
+                                    "SAVE TO CODE",
                                     TextStyle {
                                         font_size: 14.0,
-                                        color: Color::srgb(0.9, 0.93, 0.98),
+                                        color: Color::srgb(0.98, 0.9, 0.93),
                                         ..default()
                                     },
                                 ));
@@ -1498,6 +1552,11 @@ fn handle_parameter_buttons(
             Interaction::Pressed => {
                 *color = materials.pressed;
                 button.field.adjust(&mut state.working, button.delta);
+
+                // Check if this parameter has changed from defaults
+                let field_name = button.field.get_field_name();
+                let is_changed = button.field.is_changed(&state.working, &state.defaults);
+                state.changed_parameters.insert(field_name.to_string(), is_changed);
             }
             Interaction::Hovered => *color = materials.hovered,
             Interaction::None => *color = materials.normal,
@@ -1979,11 +2038,11 @@ fn render_block_detail(
     }
 }
 
-fn handle_save_defaults_button(
+fn handle_save_to_source_button(
     materials: Res<ButtonMaterials>,
     mut interaction_query: Query<
         (&Interaction, &mut BackgroundColor),
-        (Changed<Interaction>, With<SaveDefaultsButton>),
+        (Changed<Interaction>, With<SaveToSourceButton>),
     >,
     state: Res<WorldBuilderState>,
 ) {
@@ -1991,10 +2050,24 @@ fn handle_save_defaults_button(
         match *interaction {
             Interaction::Pressed => {
                 *color = materials.pressed;
-                if let Err(err) = save_defaults(&state) {
-                    warn!("Failed to save defaults: {err}");
+
+                // Detect changes from defaults
+                let changes = source_updater::detect_changes(&state.working, &state.defaults);
+
+                if changes.is_empty() {
+                    info!("No changes detected from defaults");
                 } else {
-                    info!("Saved world builder defaults to {DEFAULTS_PATH}");
+                    info!("Detected {} changed parameters:", changes.len());
+                    for change in &changes {
+                        info!("  {} = {}", change.const_name, change.new_value);
+                    }
+
+                    // Update the source file
+                    if let Err(err) = source_updater::update_source_file(&changes) {
+                        warn!("Failed to update source file: {err}");
+                    } else {
+                        info!("Successfully updated src/world/defaults.rs with {} changes", changes.len());
+                    }
                 }
             }
             Interaction::Hovered => *color = materials.hovered,
@@ -2671,24 +2744,6 @@ fn apply_planet_size(state: &mut WorldBuilderState) {
     }
 }
 
-fn load_defaults() -> Option<StoredDefaults> {
-    let path = Path::new(DEFAULTS_PATH);
-    let data = fs::read_to_string(path).ok()?;
-    serde_json::from_str(&data).ok()
-}
-
-fn save_defaults(state: &WorldBuilderState) -> Result<(), String> {
-    let stored = StoredDefaults {
-        config: state.working.clone(),
-        visualization: state.visualization,
-    };
-    let json = serde_json::to_string_pretty(&stored).map_err(|err| err.to_string())?;
-    if let Some(parent) = Path::new(DEFAULTS_PATH).parent() {
-        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
-    }
-    fs::write(DEFAULTS_PATH, json).map_err(|err| err.to_string())
-}
-
 fn default_config_for_state(state: &WorldBuilderState) -> WorldGenConfig {
     let mut planet = PlanetConfig::default();
     let size_chunks = (state.working.planet_size / 32).max(1) as i32;
@@ -2699,7 +2754,8 @@ fn default_config_for_state(state: &WorldBuilderState) -> WorldGenConfig {
 }
 
 fn reset_parameter(field: ParameterField, state: &mut WorldBuilderState) {
-    let defaults = default_config_for_state(state);
+    // Use the actual defaults, not the scaled version
+    let defaults = WorldGenConfig::default();
     match field {
         ParameterField::SeaLevel => state.working.sea_level = defaults.sea_level,
         ParameterField::ContinentCount => state.working.continent_count = defaults.continent_count,
