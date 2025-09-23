@@ -80,7 +80,7 @@ pub fn spawn_chunk_tasks(
     let task_pool = AsyncComputeTaskPool::get();
 
     let initial_tasks = chunk_queue.tasks.len();
-    let initial_pending = chunk_queue.pending_chunks.len();
+    let _initial_pending = chunk_queue.pending_chunks.len();
 
     // Spawn up to 4 tasks at a time
     while chunk_queue.tasks.len() < 4 && !chunk_queue.pending_chunks.is_empty() {

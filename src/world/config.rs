@@ -15,6 +15,7 @@ pub struct CurrentTemperature {
 }
 
 impl CurrentTemperature {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
             fahrenheit: 70.0,
@@ -70,15 +71,19 @@ pub struct WorldGenConfig {
     pub hydrology_rainfall: f32,
     pub hydrology_rainfall_variance: f32,
     pub hydrology_rainfall_frequency: f64,
-    pub hydrology_major_river_count: u32,
-    pub hydrology_major_river_boost: f32,
-    pub river_flow_threshold: f32,
-    pub river_depth_scale: f32,
-    pub river_max_depth: f32,
-    pub river_surface_ratio: f32,
-    pub lake_flow_threshold: f32,
-    pub lake_depth: f32,
-    pub lake_shore_blend: f32,
+    pub hydrology_iterations: u32,
+    pub hydrology_time_step: f32,
+    pub hydrology_infiltration_rate: f32,
+    pub hydrology_baseflow: f32,
+    pub hydrology_erosion_rate: f32,
+    pub hydrology_deposition_rate: f32,
+    pub hydrology_sediment_capacity: f32,
+    pub hydrology_bankfull_depth: f32,
+    pub hydrology_floodplain_softening: f32,
+    pub hydrology_minimum_slope: f32,
+    pub hydrology_shoreline_radius: f32,
+    pub hydrology_shoreline_max_height: f32,
+    pub hydrology_shoreline_smoothing: u32,
 }
 
 impl Default for WorldGenConfig {
@@ -123,15 +128,19 @@ impl Default for WorldGenConfig {
             hydrology_rainfall: HYDROLOGY_RAINFALL,
             hydrology_rainfall_variance: HYDROLOGY_RAINFALL_VARIANCE,
             hydrology_rainfall_frequency: HYDROLOGY_RAINFALL_FREQUENCY,
-            hydrology_major_river_count: HYDROLOGY_MAJOR_RIVER_COUNT,
-            hydrology_major_river_boost: HYDROLOGY_MAJOR_RIVER_BOOST,
-            river_flow_threshold: RIVER_FLOW_THRESHOLD,
-            river_depth_scale: RIVER_DEPTH_SCALE,
-            river_max_depth: RIVER_MAX_DEPTH,
-            river_surface_ratio: RIVER_SURFACE_RATIO,
-            lake_flow_threshold: LAKE_FLOW_THRESHOLD,
-            lake_depth: LAKE_DEPTH,
-            lake_shore_blend: LAKE_SHORE_BLEND,
+            hydrology_iterations: HYDROLOGY_ITERATIONS,
+            hydrology_time_step: HYDROLOGY_TIME_STEP,
+            hydrology_infiltration_rate: HYDROLOGY_INFILTRATION_RATE,
+            hydrology_baseflow: HYDROLOGY_BASEFLOW,
+            hydrology_erosion_rate: HYDROLOGY_EROSION_RATE,
+            hydrology_deposition_rate: HYDROLOGY_DEPOSITION_RATE,
+            hydrology_sediment_capacity: HYDROLOGY_SEDIMENT_CAPACITY,
+            hydrology_bankfull_depth: HYDROLOGY_BANKFULL_DEPTH,
+            hydrology_floodplain_softening: HYDROLOGY_FLOODPLAIN_SOFTENING,
+            hydrology_minimum_slope: HYDROLOGY_MINIMUM_SLOPE,
+            hydrology_shoreline_radius: HYDROLOGY_SHORELINE_RADIUS,
+            hydrology_shoreline_max_height: HYDROLOGY_SHORELINE_MAX_HEIGHT,
+            hydrology_shoreline_smoothing: HYDROLOGY_SHORELINE_SMOOTHING,
         }
     }
 }
@@ -156,11 +165,6 @@ impl WorldGenConfig {
         // Continent radius scales proportionally to maintain map appearance
         let continent_radius = 0.23 * (planet_size as f32 / STANDARD_WORLD_SIZE).sqrt();
         // Major river count scales with world area
-        let major_river_count = ((planet_size as f32 / STANDARD_WORLD_SIZE).sqrt() * 10.0)
-            .max(5.0)
-            .min(100.0)
-            .round() as u32;
-
         Self {
             seed: config.seed,
             planet_size,
@@ -227,19 +231,22 @@ impl WorldGenConfig {
             hydrology_rainfall: 1.4,
             hydrology_rainfall_variance: 0.4,
             hydrology_rainfall_frequency: (planet_size as f64 / 200.0), // Rain patterns ~200 blocks wide
-            hydrology_major_river_count: major_river_count,             // Scale-dependent
-            hydrology_major_river_boost: 6.0,
-
-            // SCALE-INVARIANT: River physical dimensions
-            river_flow_threshold: 120.0,
-            river_depth_scale: 0.06,
-            river_max_depth: 18.0, // Rivers always max 18 blocks deep
-            river_surface_ratio: 0.65,
-
-            // SCALE-INVARIANT: Lake dimensions
-            lake_flow_threshold: 140.0,
-            lake_depth: 15.0, // Lakes average 15 blocks deep (15m) - more realistic
-            lake_shore_blend: 5.0, // Shore transition 5 blocks for gradual slope
+            hydrology_iterations: (80.0
+                * (planet_size as f32 / STANDARD_WORLD_SIZE).clamp(0.5, 2.0))
+            .round()
+            .max(20.0) as u32,
+            hydrology_time_step: 0.35,
+            hydrology_infiltration_rate: 0.32,
+            hydrology_baseflow: 0.015,
+            hydrology_erosion_rate: 0.18,
+            hydrology_deposition_rate: 0.38,
+            hydrology_sediment_capacity: 0.65,
+            hydrology_bankfull_depth: 16.0,
+            hydrology_floodplain_softening: 6.0,
+            hydrology_minimum_slope: 0.0005,
+            hydrology_shoreline_radius: 96.0,
+            hydrology_shoreline_max_height: 18.0,
+            hydrology_shoreline_smoothing: 2,
         }
     }
 }

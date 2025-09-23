@@ -45,7 +45,7 @@ impl GameTime {
 
         // Calculate current time values
         let seconds_in_day = 24.0 * 3600.0;
-        let seconds_in_year = seconds_in_day * DAYS_PER_YEAR as f64;
+        let _seconds_in_year = seconds_in_day * DAYS_PER_YEAR as f64;
 
         // Current position in day
         let day_seconds = self.total_seconds % seconds_in_day;

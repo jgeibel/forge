@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use image::{Rgba, RgbaImage};
 use std::path::Path;
 

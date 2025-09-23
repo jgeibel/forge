@@ -15,6 +15,7 @@ pub enum ParameterCategory {
     Lake,
 }
 
+#[allow(dead_code)]
 impl ParameterCategory {
     pub fn display_name(&self) -> &str {
         match self {
@@ -45,10 +46,12 @@ pub struct ParameterMetadata {
     pub ui_tab: Option<&'static str>,
 }
 
+#[allow(dead_code)]
 pub struct ParameterRegistry {
     metadata: HashMap<&'static str, ParameterMetadata>,
 }
 
+#[allow(dead_code)]
 impl ParameterRegistry {
     pub fn new() -> Self {
         let mut metadata = HashMap::new();
@@ -514,14 +517,15 @@ impl ParameterRegistry {
         );
 
         metadata.insert(
-            "river_flow_threshold",
+            "hydrology_iterations",
             ParameterMetadata {
-                name: "River Flow Threshold",
-                field_name: "river_flow_threshold",
-                category: ParameterCategory::River,
-                description: "Minimum flow for river formation",
-                min_value: 10.0,
-                max_value: 1000.0,
+                name: "Iterations",
+                field_name: "hydrology_iterations",
+                category: ParameterCategory::Hydrology,
+                description:
+                    "Number of erosion and routing sweeps performed during the simulation.",
+                min_value: 1.0,
+                max_value: 400.0,
                 units: None,
                 ui_visible: true,
                 ui_tab: Some("Hydrology"),
@@ -529,14 +533,185 @@ impl ParameterRegistry {
         );
 
         metadata.insert(
-            "lake_flow_threshold",
+            "hydrology_time_step",
             ParameterMetadata {
-                name: "Lake Flow Threshold",
-                field_name: "lake_flow_threshold",
-                category: ParameterCategory::Lake,
-                description: "Minimum flow for lake formation",
-                min_value: 10.0,
-                max_value: 1000.0,
+                name: "Time Step",
+                field_name: "hydrology_time_step",
+                category: ParameterCategory::Hydrology,
+                description:
+                    "Simulation time per iteration controlling erosion intensity (in years).",
+                min_value: 0.01,
+                max_value: 5.0,
+                units: Some("years"),
+                ui_visible: true,
+                ui_tab: Some("Hydrology"),
+            },
+        );
+
+        metadata.insert(
+            "hydrology_infiltration_rate",
+            ParameterMetadata {
+                name: "Infiltration",
+                field_name: "hydrology_infiltration_rate",
+                category: ParameterCategory::Hydrology,
+                description: "Fraction of rainfall absorbed into soil before running off.",
+                min_value: 0.0,
+                max_value: 0.9,
+                units: None,
+                ui_visible: true,
+                ui_tab: Some("Hydrology"),
+            },
+        );
+
+        metadata.insert(
+            "hydrology_erosion_rate",
+            ParameterMetadata {
+                name: "Erosion Rate",
+                field_name: "hydrology_erosion_rate",
+                category: ParameterCategory::Hydrology,
+                description: "Multiplier applied to stream power when carving channels.",
+                min_value: 0.01,
+                max_value: 2.0,
+                units: None,
+                ui_visible: true,
+                ui_tab: Some("Hydrology"),
+            },
+        );
+
+        metadata.insert(
+            "hydrology_deposition_rate",
+            ParameterMetadata {
+                name: "Deposition Rate",
+                field_name: "hydrology_deposition_rate",
+                category: ParameterCategory::Hydrology,
+                description: "Controls how quickly suspended sediment settles when capacity drops.",
+                min_value: 0.01,
+                max_value: 2.0,
+                units: None,
+                ui_visible: true,
+                ui_tab: Some("Hydrology"),
+            },
+        );
+
+        metadata.insert(
+            "hydrology_sediment_capacity",
+            ParameterMetadata {
+                name: "Sediment Capacity",
+                field_name: "hydrology_sediment_capacity",
+                category: ParameterCategory::Hydrology,
+                description: "Base amount of material water can transport before depositing.",
+                min_value: 0.05,
+                max_value: 2.0,
+                units: None,
+                ui_visible: true,
+                ui_tab: Some("Hydrology"),
+            },
+        );
+
+        metadata.insert(
+            "hydrology_bankfull_depth",
+            ParameterMetadata {
+                name: "Bankfull Depth",
+                field_name: "hydrology_bankfull_depth",
+                category: ParameterCategory::Hydrology,
+                description: "Target channel depth for bankfull discharge before floodplain overflow (blocks).",
+                min_value: 2.0,
+                max_value: 60.0,
+                units: Some("blocks"),
+                ui_visible: true,
+                ui_tab: Some("Hydrology"),
+            },
+        );
+
+        metadata.insert(
+            "hydrology_floodplain_softening",
+            ParameterMetadata {
+                name: "Floodplain Softening",
+                field_name: "hydrology_floodplain_softening",
+                category: ParameterCategory::Hydrology,
+                description:
+                    "Blends banks into floodplains to avoid sheer cliffs at water's edge (blocks).",
+                min_value: 0.0,
+                max_value: 30.0,
+                units: Some("blocks"),
+                ui_visible: true,
+                ui_tab: Some("Hydrology"),
+            },
+        );
+
+        metadata.insert(
+            "hydrology_baseflow",
+            ParameterMetadata {
+                name: "Baseflow",
+                field_name: "hydrology_baseflow",
+                category: ParameterCategory::Hydrology,
+                description: "Constant groundwater contribution added to each cell's discharge.",
+                min_value: 0.0,
+                max_value: 0.5,
+                units: None,
+                ui_visible: true,
+                ui_tab: Some("Hydrology"),
+            },
+        );
+
+        metadata.insert(
+            "hydrology_minimum_slope",
+            ParameterMetadata {
+                name: "Minimum Slope",
+                field_name: "hydrology_minimum_slope",
+                category: ParameterCategory::Hydrology,
+                description:
+                    "Slope floor used when computing flow to keep wetlands draining gently.",
+                min_value: 0.0001,
+                max_value: 0.01,
+                units: None,
+                ui_visible: true,
+                ui_tab: Some("Hydrology"),
+            },
+        );
+
+        metadata.insert(
+            "hydrology_shoreline_radius",
+            ParameterMetadata {
+                name: "Shoreline Radius",
+                field_name: "hydrology_shoreline_radius",
+                category: ParameterCategory::Hydrology,
+                description:
+                    "Horizontal distance inland (blocks) included when smoothing coastlines.",
+                min_value: 8.0,
+                max_value: 512.0,
+                units: Some("blocks"),
+                ui_visible: true,
+                ui_tab: Some("Hydrology"),
+            },
+        );
+
+        metadata.insert(
+            "hydrology_shoreline_max_height",
+            ParameterMetadata {
+                name: "Shoreline Max Height",
+                field_name: "hydrology_shoreline_max_height",
+                category: ParameterCategory::Hydrology,
+                description:
+                    "Maximum elevation above sea level (blocks) that qualifies for shoreline smoothing.",
+                min_value: 0.0,
+                max_value: 80.0,
+                units: Some("blocks"),
+                ui_visible: true,
+                ui_tab: Some("Hydrology"),
+            },
+        );
+
+        metadata.insert(
+            "hydrology_shoreline_smoothing",
+            ParameterMetadata {
+                name: "Shoreline Smoothing",
+                field_name: "hydrology_shoreline_smoothing",
+                category: ParameterCategory::Hydrology,
+                description:
+                    "Number of blur passes applied to the shoreline mask for smooth beaches.",
+                min_value: 0.0,
+                max_value: 8.0,
                 units: None,
                 ui_visible: true,
                 ui_tab: Some("Hydrology"),

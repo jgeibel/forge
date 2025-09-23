@@ -497,7 +497,7 @@ fn draw_jagged_line(
     let perpendicular = segment_vec.cross(Vec3::Y).normalize();
 
     for i in 1..segments {
-        let t = i as f32 / segments as f32;
+        let _t = i as f32 / segments as f32;
         let base_point = start + segment_vec * i as f32;
 
         // Add some random-looking offset for jagged appearance
@@ -515,7 +515,8 @@ fn draw_jagged_line(
         let segment_color = color.with_alpha(0.7 + segment_pulse * 0.3);
 
         // Draw multiple lines for thickness effect
-        for offset in [0.0, 0.005, -0.005] {
+        let offsets = [0.0, thickness * 0.25, -thickness * 0.25];
+        for offset in offsets {
             let offset_vec = perpendicular * offset;
             gizmos.line(
                 points[i] + offset_vec,

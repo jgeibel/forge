@@ -136,9 +136,24 @@ impl WorldGenerator {
         let components = self.terrain_components(world_x, world_z);
         let hydro = self.sample_hydrology(world_x, world_z, components.base_height);
         let mut height = components.base_height - hydro.channel_depth;
-        if hydro.lake_intensity > 0.0 {
-            let shore_level = (hydro.water_level - self.config.lake_shore_blend).min(height);
+        if hydro.lake_intensity > 0.05 {
+            let soften = self.config.hydrology_floodplain_softening.max(0.0);
+            let shore_level = (hydro.water_level - soften).min(height);
             height = height.min(shore_level);
+        } else if hydro.river_intensity > 0.05 {
+            let soften = self.config.hydrology_floodplain_softening.max(0.0);
+            let blend = soften * (1.0 - hydro.river_intensity).clamp(0.0, 1.0);
+            height = height.min(hydro.water_level - blend);
+        }
+
+        if hydro.coastal_factor > 0.01 {
+            let blend_strength = hydro.coastal_factor.powf(0.8);
+            let max_elevation = self.config.hydrology_shoreline_max_height.max(0.0);
+            let relative = height - self.config.sea_level;
+            let clamped = relative.clamp(-max_elevation, max_elevation);
+            let target = self.config.sea_level + clamped;
+            height = lerp_f32(height, target, (blend_strength * 0.5).clamp(0.0, 1.0));
+            height = height.max(self.config.sea_level + 0.05);
         }
         height.max(4.0)
     }
@@ -222,11 +237,13 @@ impl WorldGenerator {
             sample.water_level = self.config.sea_level;
             sample.river_intensity = 0.0;
             sample.lake_intensity = 0.0;
+            sample.coastal_factor = 0.0;
             return sample;
         }
 
         if sample.channel_depth > 0.0 {
-            let max_carve = (base_height - 4.0).max(0.0);
+            let bankfull_cap = (self.config.hydrology_bankfull_depth * 2.5).max(4.0);
+            let max_carve = (base_height - 4.0).max(0.0).min(bankfull_cap);
             sample.channel_depth = sample.channel_depth.min(max_carve);
         }
 

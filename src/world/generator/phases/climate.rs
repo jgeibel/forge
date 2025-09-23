@@ -38,11 +38,15 @@ impl WorldGenerator {
 
     pub fn get_temperature_c(&self, world_x: f32, world_z: f32) -> f32 {
         let height = self.get_height(world_x, world_z);
+        self.temperature_at_height(world_x, world_z, height)
+    }
+
+    pub fn temperature_at_height(&self, world_x: f32, world_z: f32, height: f32) -> f32 {
         self.sample_temperature_c(world_x, world_z, height)
     }
 
     pub fn get_air_temperature(&self, world_x: f32, world_y: f32, world_z: f32) -> f32 {
-        let temp_c = self.sample_temperature_c(world_x, world_z, world_y);
+        let temp_c = self.temperature_at_height(world_x, world_z, world_y);
         celsius_to_fahrenheit(temp_c)
     }
 
@@ -60,7 +64,7 @@ impl WorldGenerator {
         ((moisture + 1.0) * 0.5) as f32
     }
 
-    pub(crate) fn sample_temperature_c(&self, world_x: f32, world_z: f32, height: f32) -> f32 {
+    fn sample_temperature_c(&self, world_x: f32, world_z: f32, height: f32) -> f32 {
         let size = self.config.planet_size.max(1) as f32;
         let latitude = ((world_z / size).rem_euclid(1.0) - 0.5).abs();
         let lat_factor = (1.0 - latitude * 2.0).clamp(-1.0, 1.0);

@@ -74,16 +74,16 @@ impl Default for CommandPrompt {
 }
 
 #[derive(Component)]
-struct CommandPromptUI;
+pub struct CommandPromptUI;
 
 #[derive(Component)]
-struct CommandInputText;
+pub struct CommandInputText;
 
 #[derive(Component)]
-struct CommandOutputText;
+pub struct CommandOutputText;
 
 #[derive(Component)]
-struct ScrollableContent;
+pub struct ScrollableContent;
 
 #[derive(Component)]
 struct OutputContainer;

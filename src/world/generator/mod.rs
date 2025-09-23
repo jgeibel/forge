@@ -15,7 +15,7 @@ mod phases;
 mod util;
 
 use continents::{generate_continent_sites, ContinentSite};
-use hydrology::HydrologyMap;
+use hydrology::HydrologySimulation;
 use mountains::MountainRangeMap;
 
 /// Logical phases in the world generation pipeline.
@@ -62,7 +62,7 @@ pub struct WorldGenerator {
     hydrology_rain_noise: Perlin,
     continent_sites: Vec<ContinentSite>,
     mountain_ranges: MountainRangeMap,
-    hydrology: HydrologyMap,
+    hydrology: HydrologySimulation,
 }
 
 impl Default for WorldGenerator {
@@ -102,7 +102,7 @@ impl WorldGenerator {
             hydrology_rain_noise,
             continent_sites: Vec::new(),
             mountain_ranges: MountainRangeMap::empty(),
-            hydrology: HydrologyMap::empty(),
+            hydrology: HydrologySimulation::empty(),
         };
 
         progress.on_phase(WorldGenPhase::Continents);
@@ -124,7 +124,7 @@ impl WorldGenerator {
         generator.initialize_island_phase();
 
         progress.on_phase(WorldGenPhase::Hydrology);
-        generator.hydrology = HydrologyMap::generate(&generator);
+        generator.hydrology = HydrologySimulation::generate(&generator);
 
         progress.on_phase(WorldGenPhase::Finalize);
         generator
@@ -134,10 +134,12 @@ impl WorldGenerator {
         Self::new(WorldGenConfig::from_planet_config(planet_config))
     }
 
+    #[allow(dead_code)]
     pub fn config(&self) -> &WorldGenConfig {
         &self.config
     }
 
+    #[allow(dead_code)]
     pub fn planet_size(&self) -> u32 {
         self.config.planet_size
     }

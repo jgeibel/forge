@@ -10,7 +10,7 @@ use crate::world::biome::Biome;
 impl WorldGenerator {
     pub fn get_biome(&self, world_x: f32, world_z: f32) -> Biome {
         let height = self.get_height(world_x, world_z);
-        let temperature_c = self.sample_temperature_c(world_x, world_z, height);
+        let temperature_c = self.temperature_at_height(world_x, world_z, height);
         let moisture = self.get_moisture(world_x, world_z);
 
         self.classify_biome_at_position(world_x, world_z, height, temperature_c, moisture)
@@ -118,10 +118,27 @@ impl WorldGenerator {
             return None;
         }
 
+        let components = self.terrain_components(world_x, world_z);
+        let hydro = self.sample_hydrology(world_x, world_z, components.base_height);
+
+        let coastal_factor = hydro.coastal_factor;
+
+        if coastal_factor < 0.15 {
+            return None;
+        }
+
+        if hydro.river_intensity > 0.12 || hydro.lake_intensity > 0.12 {
+            return None;
+        }
+
+        if hydro.water_level - components.base_height > 6.0 {
+            return None;
+        }
+
         let (distance_to_water, avg_slope) =
             self.calculate_coastal_properties(world_x, world_z, height);
 
-        if distance_to_water > 150.0 {
+        if distance_to_water > 120.0 {
             return None;
         }
 
@@ -133,14 +150,15 @@ impl WorldGenerator {
         } else {
             0.0
         };
-        let base_probability = slope_factor * elevation_factor;
+        let base_probability = slope_factor * elevation_factor * (0.4 + 0.6 * coastal_factor);
 
         if base_probability <= 0.02 {
             return None;
         }
 
-        let beach_probability = self.calculate_beach_probability(world_x, world_z, slope_factor);
-        if beach_probability < 0.05 {
+        let beach_probability = self.calculate_beach_probability(world_x, world_z, slope_factor)
+            * (0.4 + 0.6 * coastal_factor);
+        if beach_probability < 0.08 {
             return None;
         }
 

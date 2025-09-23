@@ -25,7 +25,8 @@ pub fn detect_changes(working: &WorldGenConfig, defaults: &WorldGenConfig) -> Ve
                     | "continent_count"
                     | "mountain_range_count"
                     | "hydrology_resolution"
-                    | "hydrology_major_river_count" => format!("{}", working.$field),
+                    | "hydrology_iterations"
+                    | "hydrology_shoreline_smoothing" => format!("{}", working.$field),
                     // f64 fields
                     "continent_frequency"
                     | "detail_frequency"
@@ -82,15 +83,28 @@ pub fn detect_changes(working: &WorldGenConfig, defaults: &WorldGenConfig) -> Ve
     check_field!(hydrology_rainfall, "HYDROLOGY_RAINFALL");
     check_field!(hydrology_rainfall_variance, "HYDROLOGY_RAINFALL_VARIANCE");
     check_field!(hydrology_rainfall_frequency, "HYDROLOGY_RAINFALL_FREQUENCY");
-    check_field!(hydrology_major_river_count, "HYDROLOGY_MAJOR_RIVER_COUNT");
-    check_field!(hydrology_major_river_boost, "HYDROLOGY_MAJOR_RIVER_BOOST");
-    check_field!(river_flow_threshold, "RIVER_FLOW_THRESHOLD");
-    check_field!(river_depth_scale, "RIVER_DEPTH_SCALE");
-    check_field!(river_max_depth, "RIVER_MAX_DEPTH");
-    check_field!(river_surface_ratio, "RIVER_SURFACE_RATIO");
-    check_field!(lake_flow_threshold, "LAKE_FLOW_THRESHOLD");
-    check_field!(lake_depth, "LAKE_DEPTH");
-    check_field!(lake_shore_blend, "LAKE_SHORE_BLEND");
+    check_field!(hydrology_iterations, "HYDROLOGY_ITERATIONS");
+    check_field!(hydrology_time_step, "HYDROLOGY_TIME_STEP");
+    check_field!(hydrology_infiltration_rate, "HYDROLOGY_INFILTRATION_RATE");
+    check_field!(hydrology_baseflow, "HYDROLOGY_BASEFLOW");
+    check_field!(hydrology_erosion_rate, "HYDROLOGY_EROSION_RATE");
+    check_field!(hydrology_deposition_rate, "HYDROLOGY_DEPOSITION_RATE");
+    check_field!(hydrology_sediment_capacity, "HYDROLOGY_SEDIMENT_CAPACITY");
+    check_field!(hydrology_bankfull_depth, "HYDROLOGY_BANKFULL_DEPTH");
+    check_field!(
+        hydrology_floodplain_softening,
+        "HYDROLOGY_FLOODPLAIN_SOFTENING"
+    );
+    check_field!(hydrology_minimum_slope, "HYDROLOGY_MINIMUM_SLOPE");
+    check_field!(hydrology_shoreline_radius, "HYDROLOGY_SHORELINE_RADIUS");
+    check_field!(
+        hydrology_shoreline_max_height,
+        "HYDROLOGY_SHORELINE_MAX_HEIGHT"
+    );
+    check_field!(
+        hydrology_shoreline_smoothing,
+        "HYDROLOGY_SHORELINE_SMOOTHING"
+    );
 
     changes
 }
@@ -117,6 +131,7 @@ pub fn update_source_file(changes: &[ParameterChange]) -> Result<(), String> {
                         syn::parse_str::<Expr>(&format!("{}_u64", change.new_value))
                     } else if const_name == "PLANET_SIZE"
                         || const_name.contains("COUNT")
+                        || const_name.contains("SMOOTHING")
                         || const_name == "HYDROLOGY_RESOLUTION"
                     {
                         syn::parse_str::<Expr>(&format!("{}_u32", change.new_value))
@@ -163,6 +178,7 @@ pub fn update_source_file(changes: &[ParameterChange]) -> Result<(), String> {
     Ok(())
 }
 
+#[allow(dead_code)]
 fn main() {
     println!("source_updater is a helper binary; invoke its functions from tooling.");
 }

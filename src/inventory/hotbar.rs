@@ -240,7 +240,7 @@ pub fn setup_hotbar_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
 pub fn hotbar_selection_system(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut hotbar: ResMut<Hotbar>,
-    mouse: Res<ButtonInput<MouseButton>>,
+    _mouse: Res<ButtonInput<MouseButton>>,
     command_prompt_state: Option<Res<crate::ui::command_prompt::CommandPromptState>>,
 ) {
     // Don't process input if command prompt is open
@@ -284,7 +284,7 @@ pub fn update_hotbar_ui(
     mut text_query: Query<&mut Text, With<HotbarSlotText>>,
     mut selector_query: Query<&mut Style, With<HotbarSelector>>,
     asset_server: Res<AssetServer>,
-    texture_atlas: Option<Res<crate::texture::BlockTextureAtlas>>,
+    _texture_atlas: Option<Res<crate::texture::BlockTextureAtlas>>,
 ) {
     // Update slot backgrounds, icons, and text
     for (slot, mut bg_color, children) in slot_query.iter_mut() {

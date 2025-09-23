@@ -34,7 +34,7 @@ impl Plugin for SkyPlugin {
 }
 
 fn update_sky_colors(
-    game_time: Res<GameTime>,
+    _game_time: Res<GameTime>,
     sun_position: Res<SunPosition>,
     mut sky_settings: ResMut<SkySettings>,
     mut clear_color: ResMut<ClearColor>,

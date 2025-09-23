@@ -47,8 +47,12 @@ fn main() {
         );
         println!("  Island frequency: {:.3}", world_config.island_frequency);
         println!(
-            "  Major river count: {}",
-            world_config.hydrology_major_river_count
+            "  Hydrology iterations: {}",
+            world_config.hydrology_iterations
+        );
+        println!(
+            "  Hydrology erosion rate: {:.2}",
+            world_config.hydrology_erosion_rate
         );
 
         println!("\nScale-Invariant Features (should be constant):");
@@ -64,8 +68,6 @@ fn main() {
         );
         println!("  Highland bonus: {} blocks", world_config.highland_bonus);
         println!("  Island height: {} blocks", world_config.island_height);
-        println!("  River max depth: {} blocks", world_config.river_max_depth);
-        println!("  Lake depth: {} blocks", world_config.lake_depth);
 
         // Measure actual feature sizes by sampling
         println!("\nMeasuring actual feature dimensions (sampling):");

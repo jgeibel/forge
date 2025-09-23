@@ -7,8 +7,8 @@ pub mod time;
 
 use lighting::LightingPlugin;
 use sky::SkyPlugin;
-use sun::{SunPlugin, SunPosition};
-use time::{GameTime, TimePlugin};
+use sun::SunPlugin;
+use time::TimePlugin;
 
 pub struct CelestialPlugin;
 
@@ -19,7 +19,7 @@ impl Plugin for CelestialPlugin {
     }
 }
 
-fn setup_celestial_system(mut commands: Commands) {
+fn setup_celestial_system() {
     info!("Initializing celestial system with day/night cycle");
 
     // The sun entity will be created by the SunPlugin

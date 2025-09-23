@@ -1,5 +1,6 @@
 use crate::block::BlockType;
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Tool {
     #[default]
@@ -36,6 +37,7 @@ impl Tool {
         }
     }
 
+    #[allow(dead_code)]
     pub fn name(&self) -> &str {
         match self {
             Tool::Hand => "Hand",

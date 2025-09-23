@@ -158,7 +158,7 @@ pub fn update_player_physics(
             return;
         }
     }
-    let Ok((mut transform, mut controller, mut physics)) = query.get_single_mut() else {
+    let Ok((transform, mut controller, mut physics)) = query.get_single_mut() else {
         // Don't warn every frame
         return;
     };
