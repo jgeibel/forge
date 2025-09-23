@@ -346,3 +346,38 @@ impl HydrologyMap {
         }
     }
 }
+
+impl super::WorldGenerator {
+    pub fn get_water_level(&self, world_x: f32, world_z: f32) -> f32 {
+        let components = self.terrain_components(world_x, world_z);
+        let sample = self.sample_hydrology(world_x, world_z, components.base_height);
+        if sample.water_level > self.config.sea_level {
+            sample.water_level
+        } else if components.base_height <= self.config.sea_level {
+            self.config.sea_level
+        } else {
+            self.config.sea_level
+        }
+    }
+
+    pub fn river_intensity(&self, world_x: f32, world_z: f32) -> f32 {
+        let components = self.terrain_components(world_x, world_z);
+        let sample = self.sample_hydrology(world_x, world_z, components.base_height);
+        sample.river_intensity.max(sample.lake_intensity)
+    }
+
+    pub fn major_river_factor(&self, world_x: f32, world_z: f32) -> f32 {
+        let components = self.terrain_components(world_x, world_z);
+        let sample = self.sample_hydrology(world_x, world_z, components.base_height);
+        sample.major_river
+    }
+
+    pub fn rainfall_intensity(&self, world_x: f32, world_z: f32) -> f32 {
+        let sample = self.hydrology.sample(world_x, world_z);
+        if self.hydrology.width <= 1 || self.hydrology.height <= 1 {
+            self.raw_rainfall(world_x, world_z)
+        } else {
+            sample.rainfall
+        }
+    }
+}
