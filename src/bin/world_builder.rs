@@ -313,6 +313,10 @@ enum ParameterField {
     ContinentBias,
     ContinentRadius,
     ContinentEdgePower,
+    ContinentBeltWidth,
+    ContinentRepulsionStrength,
+    ContinentDriftGain,
+    ContinentDriftBeltGain,
     DetailFrequency,
     DetailAmplitude,
     MountainFrequency,
@@ -324,6 +328,13 @@ enum ParameterField {
     MountainRangeSpurChance,
     MountainRangeSpurStrength,
     MountainRangeRoughness,
+    MountainErosionIterations,
+    MountainConvergenceBoost,
+    MountainDivergencePenalty,
+    MountainShearBoost,
+    MountainArcThreshold,
+    MountainArcStrength,
+    MountainArcWidthFactor,
     MoistureFrequency,
     EquatorTemperature,
     PoleTemperature,
@@ -366,6 +377,10 @@ impl ParameterField {
             ParameterField::ContinentBias => "Continent Bias",
             ParameterField::ContinentRadius => "Continent Radius",
             ParameterField::ContinentEdgePower => "Edge Power",
+            ParameterField::ContinentBeltWidth => "Belt Width",
+            ParameterField::ContinentRepulsionStrength => "Site Repulsion",
+            ParameterField::ContinentDriftGain => "Drift Gain",
+            ParameterField::ContinentDriftBeltGain => "Drift Belt Gain",
             ParameterField::DetailFrequency => "Detail Frequency",
             ParameterField::DetailAmplitude => "Detail Amplitude",
             ParameterField::MountainFrequency => "Mountain Frequency",
@@ -377,6 +392,13 @@ impl ParameterField {
             ParameterField::MountainRangeSpurChance => "Spur Chance",
             ParameterField::MountainRangeSpurStrength => "Spur Strength",
             ParameterField::MountainRangeRoughness => "Roughness",
+            ParameterField::MountainErosionIterations => "Erosion Passes",
+            ParameterField::MountainConvergenceBoost => "Convergence Boost",
+            ParameterField::MountainDivergencePenalty => "Divergence Penalty",
+            ParameterField::MountainShearBoost => "Shear Boost",
+            ParameterField::MountainArcThreshold => "Arc Threshold",
+            ParameterField::MountainArcStrength => "Arc Strength",
+            ParameterField::MountainArcWidthFactor => "Arc Width",
             ParameterField::MoistureFrequency => "Moisture Frequency",
             ParameterField::EquatorTemperature => "Equator Temp (°C)",
             ParameterField::PoleTemperature => "Pole Temp (°C)",
@@ -442,6 +464,21 @@ impl ParameterField {
             ParameterField::ContinentEdgePower => {
                 config.continent_edge_power = (config.continent_edge_power + delta).clamp(0.2, 4.0);
             }
+            ParameterField::ContinentBeltWidth => {
+                config.continent_belt_width =
+                    (config.continent_belt_width + delta).clamp(0.05, 0.45);
+            }
+            ParameterField::ContinentRepulsionStrength => {
+                config.continent_repulsion_strength =
+                    (config.continent_repulsion_strength + delta).clamp(0.0, 0.3);
+            }
+            ParameterField::ContinentDriftGain => {
+                config.continent_drift_gain = (config.continent_drift_gain + delta).clamp(0.0, 0.4);
+            }
+            ParameterField::ContinentDriftBeltGain => {
+                config.continent_drift_belt_gain =
+                    (config.continent_drift_belt_gain + delta).clamp(0.0, 1.2);
+            }
             ParameterField::DetailFrequency => {
                 let freq = (config.detail_frequency + delta as f64).clamp(1.0, 15.0);
                 config.detail_frequency = freq;
@@ -483,6 +520,34 @@ impl ParameterField {
             ParameterField::MountainRangeRoughness => {
                 config.mountain_range_roughness =
                     (config.mountain_range_roughness + delta).clamp(0.0, 2.5);
+            }
+            ParameterField::MountainErosionIterations => {
+                let updated =
+                    (config.mountain_erosion_iterations as i32 + delta.round() as i32).clamp(0, 12);
+                config.mountain_erosion_iterations = updated as u32;
+            }
+            ParameterField::MountainConvergenceBoost => {
+                config.mountain_convergence_boost =
+                    (config.mountain_convergence_boost + delta).clamp(0.0, 1.5);
+            }
+            ParameterField::MountainDivergencePenalty => {
+                config.mountain_divergence_penalty =
+                    (config.mountain_divergence_penalty + delta).clamp(0.0, 1.0);
+            }
+            ParameterField::MountainShearBoost => {
+                config.mountain_shear_boost = (config.mountain_shear_boost + delta).clamp(0.0, 0.6);
+            }
+            ParameterField::MountainArcThreshold => {
+                config.mountain_arc_threshold =
+                    (config.mountain_arc_threshold + delta).clamp(0.0, 1.0);
+            }
+            ParameterField::MountainArcStrength => {
+                config.mountain_arc_strength =
+                    (config.mountain_arc_strength + delta).clamp(0.0, 1.5);
+            }
+            ParameterField::MountainArcWidthFactor => {
+                config.mountain_arc_width_factor =
+                    (config.mountain_arc_width_factor + delta).clamp(0.05, 1.0);
             }
             ParameterField::MoistureFrequency => {
                 let freq = (config.moisture_frequency + delta as f64).clamp(0.1, 6.0);
@@ -604,6 +669,12 @@ impl ParameterField {
             ParameterField::ContinentBias => config.continent_bias as f64,
             ParameterField::ContinentRadius => config.continent_radius as f64,
             ParameterField::ContinentEdgePower => config.continent_edge_power as f64,
+            ParameterField::ContinentBeltWidth => config.continent_belt_width as f64,
+            ParameterField::ContinentRepulsionStrength => {
+                config.continent_repulsion_strength as f64
+            }
+            ParameterField::ContinentDriftGain => config.continent_drift_gain as f64,
+            ParameterField::ContinentDriftBeltGain => config.continent_drift_belt_gain as f64,
             ParameterField::DetailFrequency => config.detail_frequency,
             ParameterField::DetailAmplitude => config.detail_amplitude as f64,
             ParameterField::MountainFrequency => config.mountain_frequency,
@@ -615,6 +686,13 @@ impl ParameterField {
             ParameterField::MountainRangeSpurChance => config.mountain_range_spur_chance as f64,
             ParameterField::MountainRangeSpurStrength => config.mountain_range_spur_strength as f64,
             ParameterField::MountainRangeRoughness => config.mountain_range_roughness as f64,
+            ParameterField::MountainErosionIterations => config.mountain_erosion_iterations as f64,
+            ParameterField::MountainConvergenceBoost => config.mountain_convergence_boost as f64,
+            ParameterField::MountainDivergencePenalty => config.mountain_divergence_penalty as f64,
+            ParameterField::MountainShearBoost => config.mountain_shear_boost as f64,
+            ParameterField::MountainArcThreshold => config.mountain_arc_threshold as f64,
+            ParameterField::MountainArcStrength => config.mountain_arc_strength as f64,
+            ParameterField::MountainArcWidthFactor => config.mountain_arc_width_factor as f64,
             ParameterField::MoistureFrequency => config.moisture_frequency,
             ParameterField::EquatorTemperature => config.equator_temp_c as f64,
             ParameterField::PoleTemperature => config.pole_temp_c as f64,
@@ -663,6 +741,14 @@ impl ParameterField {
             ParameterField::ContinentBias => format!("{:.2}", config.continent_bias),
             ParameterField::ContinentRadius => format!("{:.2}", config.continent_radius),
             ParameterField::ContinentEdgePower => format!("{:.2}", config.continent_edge_power),
+            ParameterField::ContinentBeltWidth => format!("{:.2}", config.continent_belt_width),
+            ParameterField::ContinentRepulsionStrength => {
+                format!("{:.3}", config.continent_repulsion_strength)
+            }
+            ParameterField::ContinentDriftGain => format!("{:.3}", config.continent_drift_gain),
+            ParameterField::ContinentDriftBeltGain => {
+                format!("{:.2}", config.continent_drift_belt_gain)
+            }
             ParameterField::DetailFrequency => format!("{:.2}", config.detail_frequency),
             ParameterField::DetailAmplitude => format!("{:.1}", config.detail_amplitude),
             ParameterField::MountainFrequency => format!("{:.2}", config.mountain_frequency),
@@ -683,6 +769,27 @@ impl ParameterField {
             }
             ParameterField::MountainRangeRoughness => {
                 format!("{:.2}", config.mountain_range_roughness)
+            }
+            ParameterField::MountainErosionIterations => {
+                format!("{}", config.mountain_erosion_iterations)
+            }
+            ParameterField::MountainConvergenceBoost => {
+                format!("{:.2}", config.mountain_convergence_boost)
+            }
+            ParameterField::MountainDivergencePenalty => {
+                format!("{:.2}", config.mountain_divergence_penalty)
+            }
+            ParameterField::MountainShearBoost => {
+                format!("{:.2}", config.mountain_shear_boost)
+            }
+            ParameterField::MountainArcThreshold => {
+                format!("{:.2}", config.mountain_arc_threshold)
+            }
+            ParameterField::MountainArcStrength => {
+                format!("{:.2}", config.mountain_arc_strength)
+            }
+            ParameterField::MountainArcWidthFactor => {
+                format!("{:.2}", config.mountain_arc_width_factor)
             }
             ParameterField::MoistureFrequency => format!("{:.2}", config.moisture_frequency),
             ParameterField::EquatorTemperature => format!("{:.1}", config.equator_temp_c),
@@ -764,6 +871,10 @@ impl ParameterField {
             ParameterField::ContinentBias => 0.001,
             ParameterField::ContinentRadius => 0.001,
             ParameterField::ContinentEdgePower => 0.001,
+            ParameterField::ContinentBeltWidth => 0.001,
+            ParameterField::ContinentRepulsionStrength => 0.0005,
+            ParameterField::ContinentDriftGain => 0.0005,
+            ParameterField::ContinentDriftBeltGain => 0.001,
             ParameterField::DetailFrequency => 0.001,
             ParameterField::DetailAmplitude => 0.01,
             ParameterField::MountainFrequency => 0.001,
@@ -773,6 +884,13 @@ impl ParameterField {
             ParameterField::MountainRangeSpurChance => 0.001,
             ParameterField::MountainRangeSpurStrength => 0.001,
             ParameterField::MountainRangeRoughness => 0.001,
+            ParameterField::MountainErosionIterations => 1.0,
+            ParameterField::MountainConvergenceBoost => 0.001,
+            ParameterField::MountainDivergencePenalty => 0.001,
+            ParameterField::MountainShearBoost => 0.0005,
+            ParameterField::MountainArcThreshold => 0.001,
+            ParameterField::MountainArcStrength => 0.001,
+            ParameterField::MountainArcWidthFactor => 0.001,
             ParameterField::MountainThreshold => 0.001,
             ParameterField::HydrologyResolution => 1.0,
             ParameterField::HydrologyRainfall => 0.001,
@@ -813,6 +931,10 @@ impl ParameterField {
             ParameterField::ContinentBias => "Offset added before thresholding; raises this value to favor land creation.",
             ParameterField::ContinentRadius => "Radius of Poisson disk sites influencing continent interiors in normalized map space.",
             ParameterField::ContinentEdgePower => "Controls how sharply continent influence fades toward coastlines.",
+            ParameterField::ContinentBeltWidth => "Width of the latitude belt that favors spawning large continent sites.",
+            ParameterField::ContinentRepulsionStrength => "Strength of the relaxation push that keeps continent seeds from clumping.",
+            ParameterField::ContinentDriftGain => "Base magnitude for simulated plate drift vectors; feeds mountain placement and arcs.",
+            ParameterField::ContinentDriftBeltGain => "Additional drift multiplier applied to seeds inside the preferred belt direction.",
             ParameterField::DetailFrequency => "Frequency of mid-scale terrain detail noise; higher values create smaller hills and ridges.",
             ParameterField::DetailAmplitude => "Amplitude of detail noise in blocks (meters); increases contrast in rolling terrain.",
             ParameterField::MountainFrequency => "Base frequency of mountain noise; adjust to cluster mountains closer together or spread them out.",
@@ -824,6 +946,13 @@ impl ParameterField {
             ParameterField::MountainRangeSpurChance => "Probability that a ridge segment sprouts secondary arms; raising it increases branching and cross-range structure.",
             ParameterField::MountainRangeSpurStrength => "Relative elevation boost applied to spur ridges compared to the main belt.",
             ParameterField::MountainRangeRoughness => "Noise amplitude used along the belt to create bulges, gaps, and braided crests.",
+            ParameterField::MountainErosionIterations => "Number of smoothing iterations applied to the cached mountain field before hydrology.",
+            ParameterField::MountainConvergenceBoost => "Additional strength multiplier for mountains forming on convergent plate boundaries.",
+            ParameterField::MountainDivergencePenalty => "Penalty applied to mountain height where plates move apart or stretch.",
+            ParameterField::MountainShearBoost => "Strength multiplier contributed by shear motion along transform boundaries.",
+            ParameterField::MountainArcThreshold => "Minimum convergence value required to spawn offshore volcanic arcs.",
+            ParameterField::MountainArcStrength => "Height multiplier applied to volcanic arcs generated along subduction zones.",
+            ParameterField::MountainArcWidthFactor => "Relative width of volcanic arcs compared to their parent mountain range crest.",
             ParameterField::MoistureFrequency => "Frequency of the moisture noise used for biomes; higher values add more variation.",
             ParameterField::EquatorTemperature => "Baseline near-sea-level temperature at the equator in °C.",
             ParameterField::PoleTemperature => "Baseline near-sea-level temperature at the poles in °C.",
@@ -866,6 +995,10 @@ impl ParameterField {
             ParameterField::ContinentBias => "0.00 - 0.60",
             ParameterField::ContinentRadius => "0.05 - 0.60",
             ParameterField::ContinentEdgePower => "0.2 - 4.0",
+            ParameterField::ContinentBeltWidth => "0.05 - 0.45",
+            ParameterField::ContinentRepulsionStrength => "0.00 - 0.30",
+            ParameterField::ContinentDriftGain => "0.00 - 0.40",
+            ParameterField::ContinentDriftBeltGain => "0.0 - 1.2",
             ParameterField::DetailFrequency => "1.0 - 15.0",
             ParameterField::DetailAmplitude => "1 - 30 blocks (meters)",
             ParameterField::MountainFrequency => "0.2 - 8.0",
@@ -877,6 +1010,13 @@ impl ParameterField {
             ParameterField::MountainRangeSpurChance => "0.0 - 1.0",
             ParameterField::MountainRangeSpurStrength => "0.0 - 1.5",
             ParameterField::MountainRangeRoughness => "0.0 - 2.0",
+            ParameterField::MountainErosionIterations => "0 - 8 passes",
+            ParameterField::MountainConvergenceBoost => "0.0 - 1.5",
+            ParameterField::MountainDivergencePenalty => "0.0 - 1.0",
+            ParameterField::MountainShearBoost => "0.0 - 0.6",
+            ParameterField::MountainArcThreshold => "0.0 - 1.0",
+            ParameterField::MountainArcStrength => "0.0 - 1.5",
+            ParameterField::MountainArcWidthFactor => "0.05 - 1.0",
             ParameterField::MoistureFrequency => "0.1 - 6.0",
             ParameterField::EquatorTemperature => "10 - 45 °C",
             ParameterField::PoleTemperature => "-60 - 10 °C",
@@ -919,6 +1059,10 @@ impl ParameterField {
             ParameterField::ContinentBias => "continent_bias",
             ParameterField::ContinentRadius => "continent_radius",
             ParameterField::ContinentEdgePower => "continent_edge_power",
+            ParameterField::ContinentBeltWidth => "continent_belt_width",
+            ParameterField::ContinentRepulsionStrength => "continent_repulsion_strength",
+            ParameterField::ContinentDriftGain => "continent_drift_gain",
+            ParameterField::ContinentDriftBeltGain => "continent_drift_belt_gain",
             ParameterField::DetailFrequency => "detail_frequency",
             ParameterField::DetailAmplitude => "detail_amplitude",
             ParameterField::MountainFrequency => "mountain_frequency",
@@ -930,6 +1074,13 @@ impl ParameterField {
             ParameterField::MountainRangeSpurChance => "mountain_range_spur_chance",
             ParameterField::MountainRangeSpurStrength => "mountain_range_spur_strength",
             ParameterField::MountainRangeRoughness => "mountain_range_roughness",
+            ParameterField::MountainErosionIterations => "mountain_erosion_iterations",
+            ParameterField::MountainConvergenceBoost => "mountain_convergence_boost",
+            ParameterField::MountainDivergencePenalty => "mountain_divergence_penalty",
+            ParameterField::MountainShearBoost => "mountain_shear_boost",
+            ParameterField::MountainArcThreshold => "mountain_arc_threshold",
+            ParameterField::MountainArcStrength => "mountain_arc_strength",
+            ParameterField::MountainArcWidthFactor => "mountain_arc_width_factor",
             ParameterField::MoistureFrequency => "moisture_frequency",
             ParameterField::EquatorTemperature => "equator_temp_c",
             ParameterField::PoleTemperature => "pole_temp_c",
@@ -981,6 +1132,10 @@ const CONTINENT_FIELDS: &[ParameterField] = &[
     ParameterField::ContinentBias,
     ParameterField::ContinentRadius,
     ParameterField::ContinentEdgePower,
+    ParameterField::ContinentBeltWidth,
+    ParameterField::ContinentRepulsionStrength,
+    ParameterField::ContinentDriftGain,
+    ParameterField::ContinentDriftBeltGain,
 ];
 
 const TERRAIN_FIELDS: &[ParameterField] = &[
@@ -999,6 +1154,13 @@ const MOUNTAIN_FIELDS: &[ParameterField] = &[
     ParameterField::MountainRangeSpurChance,
     ParameterField::MountainRangeSpurStrength,
     ParameterField::MountainRangeRoughness,
+    ParameterField::MountainErosionIterations,
+    ParameterField::MountainConvergenceBoost,
+    ParameterField::MountainDivergencePenalty,
+    ParameterField::MountainShearBoost,
+    ParameterField::MountainArcThreshold,
+    ParameterField::MountainArcStrength,
+    ParameterField::MountainArcWidthFactor,
 ];
 
 const CLIMATE_FIELDS: &[ParameterField] = &[
@@ -1648,6 +1810,10 @@ fn field_step(field: ParameterField) -> f32 {
         ParameterField::ContinentBias => 0.01,
         ParameterField::ContinentRadius => 0.01,
         ParameterField::ContinentEdgePower => 0.05,
+        ParameterField::ContinentBeltWidth => 0.01,
+        ParameterField::ContinentRepulsionStrength => 0.005,
+        ParameterField::ContinentDriftGain => 0.005,
+        ParameterField::ContinentDriftBeltGain => 0.02,
         ParameterField::DetailFrequency => 0.1,
         ParameterField::DetailAmplitude => 1.0,
         ParameterField::MountainFrequency => 0.1,
@@ -1659,6 +1825,13 @@ fn field_step(field: ParameterField) -> f32 {
         ParameterField::MountainRangeSpurChance => 0.05,
         ParameterField::MountainRangeSpurStrength => 0.05,
         ParameterField::MountainRangeRoughness => 0.05,
+        ParameterField::MountainErosionIterations => 1.0,
+        ParameterField::MountainConvergenceBoost => 0.05,
+        ParameterField::MountainDivergencePenalty => 0.05,
+        ParameterField::MountainShearBoost => 0.02,
+        ParameterField::MountainArcThreshold => 0.05,
+        ParameterField::MountainArcStrength => 0.05,
+        ParameterField::MountainArcWidthFactor => 0.05,
         ParameterField::MoistureFrequency => 0.05,
         ParameterField::EquatorTemperature => 1.0,
         ParameterField::PoleTemperature => 1.0,
@@ -3149,6 +3322,18 @@ fn reset_parameter(field: ParameterField, state: &mut WorldBuilderState) {
         ParameterField::ContinentEdgePower => {
             state.working.continent_edge_power = defaults.continent_edge_power
         }
+        ParameterField::ContinentBeltWidth => {
+            state.working.continent_belt_width = defaults.continent_belt_width
+        }
+        ParameterField::ContinentRepulsionStrength => {
+            state.working.continent_repulsion_strength = defaults.continent_repulsion_strength
+        }
+        ParameterField::ContinentDriftGain => {
+            state.working.continent_drift_gain = defaults.continent_drift_gain
+        }
+        ParameterField::ContinentDriftBeltGain => {
+            state.working.continent_drift_belt_gain = defaults.continent_drift_belt_gain
+        }
         ParameterField::DetailFrequency => {
             state.working.detail_frequency = defaults.detail_frequency
         }
@@ -3179,6 +3364,27 @@ fn reset_parameter(field: ParameterField, state: &mut WorldBuilderState) {
         }
         ParameterField::MountainRangeRoughness => {
             state.working.mountain_range_roughness = defaults.mountain_range_roughness
+        }
+        ParameterField::MountainErosionIterations => {
+            state.working.mountain_erosion_iterations = defaults.mountain_erosion_iterations
+        }
+        ParameterField::MountainConvergenceBoost => {
+            state.working.mountain_convergence_boost = defaults.mountain_convergence_boost
+        }
+        ParameterField::MountainDivergencePenalty => {
+            state.working.mountain_divergence_penalty = defaults.mountain_divergence_penalty
+        }
+        ParameterField::MountainShearBoost => {
+            state.working.mountain_shear_boost = defaults.mountain_shear_boost
+        }
+        ParameterField::MountainArcThreshold => {
+            state.working.mountain_arc_threshold = defaults.mountain_arc_threshold
+        }
+        ParameterField::MountainArcStrength => {
+            state.working.mountain_arc_strength = defaults.mountain_arc_strength
+        }
+        ParameterField::MountainArcWidthFactor => {
+            state.working.mountain_arc_width_factor = defaults.mountain_arc_width_factor
         }
         ParameterField::MoistureFrequency => {
             state.working.moisture_frequency = defaults.moisture_frequency

@@ -15,6 +15,10 @@ pub mod continent {
     pub const CONTINENT_RADIUS: f32 = 0.24;
     pub const CONTINENT_EDGE_POWER: f32 = 1.2;
     pub const CONTINENT_FREQUENCY: f64 = 2.0000000208616258_f64;
+    pub const CONTINENT_BELT_WIDTH: f32 = 0.22;
+    pub const CONTINENT_REPULSION_STRENGTH: f32 = 0.08;
+    pub const CONTINENT_DRIFT_GAIN: f32 = 0.18;
+    pub const CONTINENT_DRIFT_BELT_GAIN: f32 = 0.55;
 }
 pub mod terrain {
     pub const DETAIL_FREQUENCY: f64 = 7.0;
@@ -31,6 +35,13 @@ pub mod mountain {
     pub const MOUNTAIN_RANGE_SPUR_CHANCE: f32 = 0.45_f32;
     pub const MOUNTAIN_RANGE_SPUR_STRENGTH: f32 = 1.5;
     pub const MOUNTAIN_RANGE_ROUGHNESS: f32 = 1.6999996_f32;
+    pub const MOUNTAIN_EROSION_ITERATIONS: u32 = 3;
+    pub const MOUNTAIN_CONVERGENCE_BOOST: f32 = 0.65;
+    pub const MOUNTAIN_DIVERGENCE_PENALTY: f32 = 0.4;
+    pub const MOUNTAIN_SHEAR_BOOST: f32 = 0.12;
+    pub const MOUNTAIN_ARC_THRESHOLD: f32 = 0.25;
+    pub const MOUNTAIN_ARC_STRENGTH: f32 = 0.4;
+    pub const MOUNTAIN_ARC_WIDTH_FACTOR: f32 = 0.45;
 }
 pub mod climate {
     pub const MOISTURE_FREQUENCY: f64 = 2.6;

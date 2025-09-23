@@ -106,16 +106,16 @@ impl WorldGenerator {
         };
 
         progress.on_phase(WorldGenPhase::Continents);
-        generator.continent_sites = generate_continent_sites(
-            generator.config.seed,
-            generator.config.continent_count.max(1),
-        );
+        generator.continent_sites = generate_continent_sites(&generator.config);
 
         progress.on_phase(WorldGenPhase::Terrain);
         generator.initialize_terrain_phase();
 
         progress.on_phase(WorldGenPhase::Mountains);
-        generator.mountain_ranges = MountainRangeMap::generate(&generator.config);
+        generator.mountain_ranges =
+            MountainRangeMap::generate(&generator.config, &generator.continent_sites, &|u, v| {
+                generator.plate_sample(u, v)
+            });
 
         progress.on_phase(WorldGenPhase::Climate);
         generator.initialize_climate_phase();

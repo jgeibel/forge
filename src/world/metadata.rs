@@ -240,6 +240,69 @@ impl ParameterRegistry {
             },
         );
 
+        metadata.insert(
+            "continent_belt_width",
+            ParameterMetadata {
+                name: "Belt Width",
+                field_name: "continent_belt_width",
+                category: ParameterCategory::Continent,
+                description:
+                    "Width of the latitude band that favors large continent sites (0-0.5).",
+                min_value: 0.05,
+                max_value: 0.45,
+                units: None,
+                ui_visible: true,
+                ui_tab: Some("Continents"),
+            },
+        );
+
+        metadata.insert(
+            "continent_repulsion_strength",
+            ParameterMetadata {
+                name: "Site Repulsion",
+                field_name: "continent_repulsion_strength",
+                category: ParameterCategory::Continent,
+                description:
+                    "Strength of the relaxation push that keeps continent seeds separated.",
+                min_value: 0.0,
+                max_value: 0.3,
+                units: None,
+                ui_visible: true,
+                ui_tab: Some("Continents"),
+            },
+        );
+
+        metadata.insert(
+            "continent_drift_gain",
+            ParameterMetadata {
+                name: "Drift Gain",
+                field_name: "continent_drift_gain",
+                category: ParameterCategory::Continent,
+                description: "Base magnitude for simulated plate drift vectors (0 = static).",
+                min_value: 0.0,
+                max_value: 0.4,
+                units: None,
+                ui_visible: true,
+                ui_tab: Some("Continents"),
+            },
+        );
+
+        metadata.insert(
+            "continent_drift_belt_gain",
+            ParameterMetadata {
+                name: "Drift Belt Gain",
+                field_name: "continent_drift_belt_gain",
+                category: ParameterCategory::Continent,
+                description:
+                    "Additional drift multiplier applied inside the preferred belt orientation.",
+                min_value: 0.0,
+                max_value: 1.2,
+                units: None,
+                ui_visible: true,
+                ui_tab: Some("Continents"),
+            },
+        );
+
         // Terrain Parameters
         metadata.insert(
             "detail_frequency",
@@ -372,6 +435,116 @@ impl ParameterRegistry {
                 description: "Strength of mountain ranges",
                 min_value: 0.5,
                 max_value: 5.0,
+                units: None,
+                ui_visible: true,
+                ui_tab: Some("Mountains"),
+            },
+        );
+
+        metadata.insert(
+            "mountain_erosion_iterations",
+            ParameterMetadata {
+                name: "Erosion Passes",
+                field_name: "mountain_erosion_iterations",
+                category: ParameterCategory::Mountain,
+                description:
+                    "Number of smoothing iterations applied to mountain ranges before hydrology.",
+                min_value: 0.0,
+                max_value: 8.0,
+                units: None,
+                ui_visible: true,
+                ui_tab: Some("Mountains"),
+            },
+        );
+
+        metadata.insert(
+            "mountain_convergence_boost",
+            ParameterMetadata {
+                name: "Convergence Boost",
+                field_name: "mountain_convergence_boost",
+                category: ParameterCategory::Mountain,
+                description:
+                    "Additional mountain strength multiplier along convergent plate boundaries.",
+                min_value: 0.0,
+                max_value: 1.5,
+                units: None,
+                ui_visible: true,
+                ui_tab: Some("Mountains"),
+            },
+        );
+
+        metadata.insert(
+            "mountain_divergence_penalty",
+            ParameterMetadata {
+                name: "Divergence Penalty",
+                field_name: "mountain_divergence_penalty",
+                category: ParameterCategory::Mountain,
+                description: "Penalty applied to mountain strength where plates move apart.",
+                min_value: 0.0,
+                max_value: 1.0,
+                units: None,
+                ui_visible: true,
+                ui_tab: Some("Mountains"),
+            },
+        );
+
+        metadata.insert(
+            "mountain_shear_boost",
+            ParameterMetadata {
+                name: "Shear Boost",
+                field_name: "mountain_shear_boost",
+                category: ParameterCategory::Mountain,
+                description:
+                    "Multiplier applied where plates slide past one another (transform faults).",
+                min_value: 0.0,
+                max_value: 0.6,
+                units: None,
+                ui_visible: true,
+                ui_tab: Some("Mountains"),
+            },
+        );
+
+        metadata.insert(
+            "mountain_arc_threshold",
+            ParameterMetadata {
+                name: "Arc Threshold",
+                field_name: "mountain_arc_threshold",
+                category: ParameterCategory::Mountain,
+                description: "Minimum convergence required before volcanic arcs spawn offshore.",
+                min_value: 0.0,
+                max_value: 1.0,
+                units: None,
+                ui_visible: true,
+                ui_tab: Some("Mountains"),
+            },
+        );
+
+        metadata.insert(
+            "mountain_arc_strength",
+            ParameterMetadata {
+                name: "Arc Strength",
+                field_name: "mountain_arc_strength",
+                category: ParameterCategory::Mountain,
+                description:
+                    "Relative height of volcanic island arcs generated along subduction zones.",
+                min_value: 0.0,
+                max_value: 1.5,
+                units: None,
+                ui_visible: true,
+                ui_tab: Some("Mountains"),
+            },
+        );
+
+        metadata.insert(
+            "mountain_arc_width_factor",
+            ParameterMetadata {
+                name: "Arc Width",
+                field_name: "mountain_arc_width_factor",
+                category: ParameterCategory::Mountain,
+                description:
+                    "Relative width of volcanic arcs compared to their parent range crest.",
+                min_value: 0.05,
+                max_value: 1.0,
                 units: None,
                 ui_visible: true,
                 ui_tab: Some("Mountains"),

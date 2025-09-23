@@ -5,6 +5,7 @@ use std::f32::consts::TAU;
 
 use crate::world::config::WorldGenConfig;
 
+use super::continents::{ContinentSite, PlateSample};
 use super::util::{
     rotate_vec2, torus_delta, torus_distance, torus_noise, wrap_index, wrap_index_isize, wrap_vec2,
 };
@@ -32,7 +33,11 @@ impl MountainRangeMap {
         }
     }
 
-    pub(super) fn generate(config: &WorldGenConfig) -> Self {
+    pub(super) fn generate(
+        config: &WorldGenConfig,
+        sites: &[ContinentSite],
+        plate_sampler: &dyn Fn(f32, f32) -> PlateSample,
+    ) -> Self {
         let planet_size = config.planet_size.max(1) as f32;
         let mut resolution = (planet_size / 32.0).round() as usize;
         if resolution < 128 {
@@ -65,45 +70,173 @@ impl MountainRangeMap {
             roughness: config.mountain_range_roughness.clamp(0.0, 2.5),
         };
         let roughness_noise = Perlin::new(config.seed.wrapping_add(91) as u32);
+        let erosion_iterations = config.mountain_erosion_iterations as usize;
 
-        for _ in 0..count {
+        if sites.is_empty() {
+            for _ in 0..count {
+                let mut points = Vec::new();
+                let mut current = Vec2::new(rng.gen::<f32>(), rng.gen::<f32>());
+                let mut heading = rng.gen::<f32>() * TAU;
+
+                let segments = rng.gen_range(6..12);
+                let total_length = rng.gen_range(0.18..0.42);
+                let step = total_length / segments as f32;
+                points.push(current);
+
+                for _ in 0..segments {
+                    let bend = (rng.gen::<f32>() - 0.5) * 0.4;
+                    heading = (heading + bend).rem_euclid(TAU);
+                    let lateral = (rng.gen::<f32>() - 0.5) * 0.35 * step;
+                    let forward = Vec2::new(heading.cos(), heading.sin());
+                    let normal = Vec2::new(-forward.y, forward.x);
+                    current += forward * step + normal * lateral;
+                    current.x = current.x.rem_euclid(1.0);
+                    current.y = current.y.rem_euclid(1.0);
+                    points.push(current);
+                }
+
+                let width_variation = rng.gen_range(0.75..1.35);
+                let strength_variation = rng.gen_range(0.7..1.3);
+                let half_width = (base_half_width * width_variation).clamp(0.002, 0.3);
+                let strength = base_strength * strength_variation;
+                map.paint_range(
+                    &points,
+                    half_width,
+                    strength,
+                    &roughness_noise,
+                    range_params,
+                    &mut rng,
+                    true,
+                    plate_sampler,
+                    config,
+                );
+            }
+            map.normalize();
+            map.apply_erosion(3);
+            return map;
+        }
+
+        let base_radius = config.continent_radius.max(0.01);
+        let total_site_weight: f32 = sites.iter().map(|s| s.weight.max(0.05)).sum();
+        let average_site_weight = total_site_weight / sites.len() as f32;
+
+        let mut spawn_for_site = |site: &ContinentSite, rng: &mut StdRng| {
+            let axis = site.axis_ratio.max(0.2);
+            let major = (base_radius * site.radius_scale * axis).max(0.02);
+            let minor = (base_radius * site.radius_scale / axis).max(0.01);
+
+            let along = Vec2::new(site.ridge_angle.cos(), site.ridge_angle.sin());
+            let across = Vec2::new(-along.y, along.x);
+
             let mut points = Vec::new();
-            let mut current = Vec2::new(rng.gen::<f32>(), rng.gen::<f32>());
-            let mut heading = rng.gen::<f32>() * TAU;
+            let mut current = {
+                let offset_along = rng.gen_range(-0.35..0.35) * major;
+                let offset_across = rng.gen_range(-0.55..0.55) * minor;
+                wrap_vec2(site.position + along * offset_along + across * offset_across)
+            };
 
-            let segments = rng.gen_range(6..12);
-            let total_length = rng.gen_range(0.18..0.42);
-            let step = total_length / segments as f32;
             points.push(current);
 
+            let total_length = major * rng.gen_range(0.9..1.6);
+            let segments =
+                ((total_length * map.width as f32 * 1.1).clamp(6.0, 20.0)).round() as usize;
+            let step = (total_length / segments.max(1) as f32).max(0.005);
+
+            let mut heading = rotate_vec2(along, rng.gen_range(-0.35..0.35));
+
             for _ in 0..segments {
-                let bend = (rng.gen::<f32>() - 0.5) * 0.4;
-                heading = (heading + bend).rem_euclid(TAU);
-                let lateral = (rng.gen::<f32>() - 0.5) * 0.35 * step;
-                let forward = Vec2::new(heading.cos(), heading.sin());
-                let normal = Vec2::new(-forward.y, forward.x);
-                current += forward * step + normal * lateral;
-                current.x = current.x.rem_euclid(1.0);
-                current.y = current.y.rem_euclid(1.0);
+                let bend = rng.gen_range(-0.28..0.28);
+                heading = rotate_vec2(heading, bend * 0.45).normalize_or_zero();
+                if heading.length_squared() <= f32::EPSILON {
+                    heading = along;
+                }
+
+                let lateral_bias = rng.gen_range(-0.4..0.4) * minor;
+                let advance = heading * step + across * (lateral_bias * 0.35);
+                let mut candidate = wrap_vec2(current + advance);
+
+                let local = Vec2::new(
+                    torus_delta(site.position.x, candidate.x),
+                    torus_delta(site.position.y, candidate.y),
+                );
+                let cos_o = site.orientation.cos();
+                let sin_o = site.orientation.sin();
+                let rotated_x = local.x * cos_o + local.y * sin_o;
+                let rotated_y = -local.x * sin_o + local.y * cos_o;
+                let normalized = ((rotated_x / (major * 1.1)).powi(2)
+                    + (rotated_y / (minor * 1.1)).powi(2))
+                .sqrt();
+                if normalized > 1.25 {
+                    let clamped = local / normalized * 1.25;
+                    candidate = wrap_vec2(site.position + clamped);
+                }
+
+                current = candidate;
                 points.push(current);
             }
 
-            let width_variation = rng.gen_range(0.75..1.35);
-            let strength_variation = rng.gen_range(0.7..1.3);
-            let half_width = (base_half_width * width_variation).clamp(0.002, 0.3);
-            let strength = base_strength * strength_variation;
-            map.paint_range(
-                &points,
-                half_width,
-                strength,
-                &roughness_noise,
-                range_params,
-                &mut rng,
-                true,
-            );
+            if points.len() >= 2 {
+                let plate = plate_sampler(site.position.x, site.position.y);
+                let site_weight = (site.weight / average_site_weight).sqrt().clamp(0.6, 2.2);
+                let width_adjust = (1.0 + plate.divergence * config.mountain_divergence_penalty
+                    - plate.convergence * config.mountain_convergence_boost)
+                    .clamp(0.3, 2.0);
+                let width_variation =
+                    rng.gen_range(0.85..1.25) * (1.0 / axis).sqrt() * width_adjust;
+                let strength_adjust = (1.0 + plate.convergence * config.mountain_convergence_boost
+                    - plate.divergence * config.mountain_divergence_penalty)
+                    .clamp(0.3, 3.0);
+                let strength_variation = rng.gen_range(0.85..1.25) * site_weight * strength_adjust;
+                let half_width = (base_half_width * width_variation).clamp(0.0025, 0.35);
+                let strength = (base_strength * strength_variation).max(base_strength * 0.4);
+
+                map.paint_range(
+                    &points,
+                    half_width,
+                    strength,
+                    &roughness_noise,
+                    range_params,
+                    rng,
+                    true,
+                    plate_sampler,
+                    config,
+                );
+            }
+        };
+
+        for _ in 0..count {
+            let roll = if total_site_weight > f32::EPSILON {
+                rng.gen::<f32>() * total_site_weight
+            } else {
+                -1.0
+            };
+
+            if roll >= 0.0 {
+                let mut accum = 0.0_f32;
+                let mut chosen = None;
+                for site in sites {
+                    accum += site.weight.max(0.05);
+                    if roll <= accum {
+                        chosen = Some(site);
+                        break;
+                    }
+                }
+                if let Some(site) = chosen {
+                    spawn_for_site(site, &mut rng);
+                    continue;
+                }
+            }
+
+            // Fallback in case weights are invalid
+            let index = rng.gen_range(0..sites.len());
+            let site = &sites[index];
+            spawn_for_site(site, &mut rng);
         }
 
         map.normalize();
+        if erosion_iterations > 0 {
+            map.apply_erosion(erosion_iterations);
+        }
         map
     }
 
@@ -142,6 +275,8 @@ impl MountainRangeMap {
         params: RangeParams,
         rng: &mut StdRng,
         allow_spurs: bool,
+        plate_sampler: &dyn Fn(f32, f32) -> PlateSample,
+        config: &WorldGenConfig,
     ) {
         if points.len() < 2 {
             return;
@@ -150,7 +285,16 @@ impl MountainRangeMap {
         for segment in points.windows(2) {
             let start = segment[0];
             let end = segment[1];
-            self.paint_segment(start, end, half_width, strength, roughness_noise, params);
+            self.paint_segment(
+                start,
+                end,
+                half_width,
+                strength,
+                roughness_noise,
+                params,
+                plate_sampler,
+                config,
+            );
 
             if allow_spurs && rng.gen::<f32>() < params.spur_chance {
                 if let Some(spur_points) = self.generate_spur(start, end, half_width, params, rng) {
@@ -164,6 +308,8 @@ impl MountainRangeMap {
                         params,
                         rng,
                         false,
+                        plate_sampler,
+                        config,
                     );
                 }
             }
@@ -178,6 +324,8 @@ impl MountainRangeMap {
         strength: f32,
         roughness_noise: &Perlin,
         params: RangeParams,
+        plate_sampler: &dyn Fn(f32, f32) -> PlateSample,
+        config: &WorldGenConfig,
     ) {
         let dx = torus_delta(start.x, end.x);
         let dy = torus_delta(start.y, end.y);
@@ -203,7 +351,12 @@ impl MountainRangeMap {
             let width_mod = (1.0 + noise_value * params.roughness * 0.5).clamp(0.35, 2.8);
             let strength_mod = (1.0 + noise_value * params.roughness * 0.4).clamp(0.3, 2.6);
             let local_half = (half_width * width_mod).clamp(0.0005, 0.35);
-            let local_strength = strength * strength_mod;
+            let plate = plate_sampler(point.x, point.y);
+            let boundary_boost = (1.0 + plate.convergence * config.mountain_convergence_boost
+                - plate.divergence * config.mountain_divergence_penalty)
+                .clamp(0.25, 3.5);
+            let shear_boost = (1.0 + plate.shear * config.mountain_shear_boost).clamp(0.5, 2.0);
+            let local_strength = strength * strength_mod * boundary_boost * shear_boost;
 
             self.splat(point, local_half, local_strength);
 
@@ -216,6 +369,19 @@ impl MountainRangeMap {
 
                 let spur_point = wrap_vec2(point + lateral * side_offset);
                 self.splat(spur_point, local_half * 0.45, local_strength * 0.4);
+            }
+
+            if plate.convergence > config.mountain_arc_threshold {
+                let arc_dir = plate.drift.normalize_or_zero();
+                if arc_dir.length_squared() > 0.0 && config.mountain_arc_strength > 0.0 {
+                    let arc_point = wrap_vec2(point + arc_dir * (local_half * 0.8));
+                    let arc_width = (local_half
+                        * config.mountain_arc_width_factor.clamp(0.05, 1.0))
+                    .clamp(0.0004, 0.35);
+                    let arc_strength =
+                        local_strength * config.mountain_arc_strength.clamp(0.05, 1.5);
+                    self.splat(arc_point, arc_width, arc_strength);
+                }
             }
         }
     }
@@ -336,5 +502,59 @@ impl MountainRangeMap {
         let xi = wrap_index_isize(x, self.width as isize) as usize;
         let yi = wrap_index_isize(y, self.height as isize) as usize;
         self.data[yi * self.width + xi]
+    }
+
+    fn apply_erosion(&mut self, iterations: usize) {
+        if self.width == 0 || self.height == 0 || self.data.is_empty() {
+            return;
+        }
+
+        let mut buffer = vec![0.0_f32; self.data.len()];
+        let width = self.width as isize;
+        let height = self.height as isize;
+
+        for _ in 0..iterations.max(1) {
+            for y in 0..height {
+                for x in 0..width {
+                    let center = self.get(x, y);
+                    let mut sum = center;
+                    let mut weight_sum = 1.0_f32;
+
+                    for dy in -1..=1 {
+                        for dx in -1..=1 {
+                            if dx == 0 && dy == 0 {
+                                continue;
+                            }
+                            let nx = wrap_index_isize(x + dx, width);
+                            let ny = wrap_index_isize(y + dy, height);
+                            let neighbor = self.get(nx, ny);
+                            let weight = if dx == 0 || dy == 0 { 0.9 } else { 0.7 };
+                            sum += neighbor * weight;
+                            weight_sum += weight;
+                        }
+                    }
+
+                    let average = sum / weight_sum;
+                    let diff = center - average;
+                    let eroded = center - diff * 0.38;
+                    buffer[(y as usize) * self.width + x as usize] = eroded.max(0.0);
+                }
+            }
+
+            std::mem::swap(&mut self.data, &mut buffer);
+
+            // Re-normalize after each pass to keep the field within [0, 1].
+            let mut max_value = 0.0_f32;
+            for value in &self.data {
+                if *value > max_value {
+                    max_value = *value;
+                }
+            }
+            if max_value > f32::EPSILON {
+                for value in &mut self.data {
+                    *value = (*value / max_value).clamp(0.0, 1.0);
+                }
+            }
+        }
     }
 }
