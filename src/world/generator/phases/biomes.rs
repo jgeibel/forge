@@ -5,7 +5,7 @@ use super::super::{
     WorldGenerator,
 };
 use crate::block::BlockType;
-use crate::chunk::{ChunkPos, ChunkStorage};
+use crate::chunk::{ChunkPos, ChunkStorage, CHUNK_SIZE};
 use crate::world::biome::Biome;
 
 impl WorldGenerator {
@@ -49,11 +49,105 @@ impl WorldGenerator {
 
     pub fn bake_chunk(&self, chunk_pos: ChunkPos) -> ChunkStorage {
         let world_origin = chunk_pos.to_world_pos();
-        ChunkStorage::from_fn(|x, y, z| {
-            let world_x = world_origin.x + x as f32;
+        #[derive(Clone, Copy)]
+        struct ColumnInfo {
+            height: f32,
+            water_level: f32,
+            surface_block: BlockType,
+            subsurface_block: BlockType,
+            water_block: BlockType,
+        }
+
+        let mut columns = Vec::with_capacity(CHUNK_SIZE * CHUNK_SIZE);
+        for z in 0..CHUNK_SIZE {
+            for x in 0..CHUNK_SIZE {
+                let world_x = world_origin.x + x as f32;
+                let world_z = world_origin.z + z as f32;
+
+                let components = self.terrain_components(world_x, world_z);
+                let hydro = self.sample_hydrology(world_x, world_z, components.base_height);
+
+                let mut height = components.base_height - hydro.channel_depth;
+                if hydro.lake_intensity > 0.05 {
+                    let soften = self.config.hydrology_floodplain_softening.max(0.0);
+                    let shore_level = (hydro.water_level - soften).min(height);
+                    height = height.min(shore_level);
+                } else if hydro.river_intensity > 0.05 {
+                    let soften = self.config.hydrology_floodplain_softening.max(0.0);
+                    let blend = soften * (1.0 - hydro.river_intensity).clamp(0.0, 1.0);
+                    height = height.min(hydro.water_level - blend);
+                }
+
+                if hydro.coastal_factor > 0.01 {
+                    let blend_strength = hydro.coastal_factor.powf(0.8);
+                    let max_elevation = self.config.hydrology_shoreline_max_height.max(0.0);
+                    let relative = height - self.config.sea_level;
+                    let clamped = relative.clamp(-max_elevation, max_elevation);
+                    let target = self.config.sea_level + clamped;
+                    height = lerp_f32(height, target, (blend_strength * 0.5).clamp(0.0, 1.0));
+                    height = height.max(self.config.sea_level + 0.05);
+                }
+
+                height = height.max(4.0);
+
+                let water_level = if hydro.water_level > self.config.sea_level {
+                    hydro.water_level
+                } else {
+                    self.config.sea_level
+                };
+
+                let temperature_c = self.temperature_at_height(world_x, world_z, height);
+                let moisture = self.get_moisture(world_x, world_z);
+                let biome = self.classify_biome_at_position(
+                    world_x,
+                    world_z,
+                    height,
+                    temperature_c,
+                    moisture,
+                );
+
+                let surface_block = biome.surface_block();
+                let subsurface_block = biome.subsurface_block();
+                let water_block = match biome {
+                    Biome::FrozenOcean | Biome::IceCap => BlockType::Ice,
+                    _ => BlockType::Water,
+                };
+
+                columns.push(ColumnInfo {
+                    height,
+                    water_level,
+                    surface_block,
+                    subsurface_block,
+                    water_block,
+                });
+            }
+        }
+
+        let columns = columns;
+        ChunkStorage::from_fn(move |x, y, z| {
+            let column = &columns[z * CHUNK_SIZE + x];
             let world_y = world_origin.y + y as f32;
-            let world_z = world_origin.z + z as f32;
-            self.get_block(world_x, world_y, world_z)
+
+            if world_y < 2.0 {
+                return BlockType::Bedrock;
+            }
+
+            if world_y > column.height {
+                if world_y <= column.water_level {
+                    return column.water_block;
+                }
+                return BlockType::Air;
+            }
+
+            if world_y >= column.height - 1.0 {
+                return column.surface_block;
+            }
+
+            if world_y >= column.height - 4.0 {
+                return column.subsurface_block;
+            }
+
+            BlockType::Stone
         })
     }
 

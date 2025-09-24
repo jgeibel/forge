@@ -3,6 +3,12 @@ use crate::texture::{BlockFace, BlockState, BlockTextureAtlas};
 use bevy::prelude::*;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
 use bevy::render::render_asset::RenderAssetUsages;
+use bevy::tasks::{AsyncComputeTaskPool, Task};
+use bevy::utils::HashSet;
+use futures_lite::future;
+use std::collections::VecDeque;
+use std::sync::Arc;
+use std::time::Instant;
 
 #[derive(Debug, Clone, Copy)]
 struct Vertex {
@@ -16,58 +22,130 @@ struct Vertex {
 #[derive(Component)]
 pub struct WaterMesh;
 
-pub fn update_chunk_meshes(
+#[derive(Resource, Default)]
+pub struct ChunkMeshJobs {
+    tasks: Vec<(Entity, Task<MeshBuildResult>)>,
+    scheduled: HashSet<Entity>,
+    recent_durations: VecDeque<f32>,
+}
+
+impl ChunkMeshJobs {
+    pub fn task_count(&self) -> usize {
+        self.tasks.len()
+    }
+
+    pub fn scheduled_count(&self) -> usize {
+        self.scheduled.len()
+    }
+
+    pub fn average_duration_ms(&self) -> Option<f32> {
+        if self.recent_durations.is_empty() {
+            None
+        } else {
+            let sum: f32 = self.recent_durations.iter().copied().sum();
+            Some(sum / self.recent_durations.len() as f32)
+        }
+    }
+}
+
+struct MeshBuildResult {
+    opaque_mesh: Mesh,
+    water_mesh: Mesh,
+    duration: f32,
+}
+
+const MESH_HISTORY_SAMPLES: usize = 120;
+
+pub fn queue_chunk_mesh_builds(
+    mut chunk_query: Query<(Entity, &mut Chunk)>,
+    texture_atlas: Option<Res<BlockTextureAtlas>>,
+    mut mesh_jobs: ResMut<ChunkMeshJobs>,
+) {
+    let atlas_snapshot = texture_atlas
+        .as_ref()
+        .map(|atlas| Arc::new((**atlas).clone()));
+    let task_pool = AsyncComputeTaskPool::get();
+
+    for (entity, mut chunk) in chunk_query.iter_mut() {
+        if !chunk.dirty || mesh_jobs.scheduled.contains(&entity) {
+            continue;
+        }
+
+        let storage = chunk.storage.clone();
+        let chunk_pos = chunk.position;
+        chunk.dirty = false;
+        mesh_jobs.scheduled.insert(entity);
+
+        let atlas_for_task = atlas_snapshot.clone();
+        let task = task_pool.spawn(async move {
+            let start = Instant::now();
+            let mut chunk_copy = Chunk::from_storage(chunk_pos, storage);
+            chunk_copy.dirty = false;
+            let atlas_ref = atlas_for_task.as_ref().map(|atlas| atlas.as_ref());
+            let (opaque_mesh, water_mesh) = generate_chunk_meshes(&chunk_copy, atlas_ref);
+            MeshBuildResult {
+                opaque_mesh,
+                water_mesh,
+                duration: start.elapsed().as_secs_f32(),
+            }
+        });
+
+        mesh_jobs.tasks.push((entity, task));
+    }
+}
+
+pub fn apply_chunk_mesh_results(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut chunk_query: Query<(Entity, &mut Chunk, Option<&Handle<Mesh>>)>,
+    mut mesh_jobs: ResMut<ChunkMeshJobs>,
     texture_atlas: Option<Res<BlockTextureAtlas>>,
-    time: Res<Time>,
 ) {
-    let mut meshes_generated = 0;
-    let total_dirty = chunk_query
-        .iter()
-        .filter(|(_, chunk, _)| chunk.dirty)
-        .count();
-    let start_time = time.elapsed_seconds();
+    let atlas_option = texture_atlas.as_deref();
 
-    for (entity, mut chunk, mesh_handle) in chunk_query.iter_mut() {
-        if !chunk.dirty {
-            continue;
+    let mut finished_indices = Vec::new();
+    let mut finished_payloads = Vec::new();
+
+    for (index, (entity, task)) in mesh_jobs.tasks.iter_mut().enumerate() {
+        if let Some(result) = future::block_on(future::poll_once(task)) {
+            finished_indices.push(index);
+            finished_payloads.push((*entity, result));
+        }
+    }
+
+    for (entity, result) in finished_payloads.into_iter() {
+        mesh_jobs.scheduled.remove(&entity);
+        mesh_jobs
+            .recent_durations
+            .push_back(result.duration * 1000.0);
+        if mesh_jobs.recent_durations.len() > MESH_HISTORY_SAMPLES {
+            mesh_jobs.recent_durations.pop_front();
         }
 
-        // Generate separate meshes for opaque and water blocks
-        let (opaque_mesh, water_mesh) = generate_chunk_meshes(&chunk, texture_atlas.as_deref());
-        chunk.dirty = false;
-        meshes_generated += 1;
-
-        // Remove old water mesh children if they exist
-        commands.entity(entity).despawn_descendants();
-
-        // Handle opaque mesh
-        if opaque_mesh.count_vertices() == 0 && water_mesh.count_vertices() == 0 {
-            if mesh_handle.is_some() {
-                commands.entity(entity).remove::<Handle<Mesh>>();
-                commands.entity(entity).remove::<Handle<StandardMaterial>>();
-            }
+        let Some(mut entity_commands) = commands.get_entity(entity) else {
             continue;
-        }
+        };
 
-        // Add opaque mesh to the main entity if it has vertices
-        if opaque_mesh.count_vertices() > 0 {
-            let opaque_mesh_handle = meshes.add(opaque_mesh);
-            let opaque_material = if let Some(atlas) = &texture_atlas {
+        entity_commands.despawn_descendants();
+
+        let opaque_vertices = result.opaque_mesh.count_vertices();
+        let water_vertices = result.water_mesh.count_vertices();
+
+        if opaque_vertices == 0 && water_vertices == 0 {
+            entity_commands.remove::<Handle<Mesh>>();
+            entity_commands.remove::<Handle<StandardMaterial>>();
+        } else if opaque_vertices > 0 {
+            let mesh_handle = meshes.add(result.opaque_mesh);
+            let material = if let Some(atlas) = atlas_option {
                 materials.add(StandardMaterial {
                     base_color_texture: Some(atlas.texture.clone()),
                     base_color: Color::WHITE,
                     perceptual_roughness: 0.9,
                     metallic: 0.0,
                     reflectance: 0.1,
-                    // Note: We use double_sided rendering to ensure blocks are visible from all angles
-                    // This is less performant but more robust given our mesh generation
                     double_sided: true,
                     cull_mode: None,
-                    alpha_mode: AlphaMode::Opaque, // Changed from Mask to prevent texture artifacting
+                    alpha_mode: AlphaMode::Opaque,
                     ..default()
                 })
             } else {
@@ -83,35 +161,32 @@ pub fn update_chunk_meshes(
                 })
             };
 
-            commands
-                .entity(entity)
-                .insert((opaque_mesh_handle, opaque_material));
-        } else if water_mesh.count_vertices() > 0 {
-            // If there's no opaque mesh but there is water, we still need a placeholder mesh
-            // Otherwise the chunk entity won't render properly
-            commands.entity(entity).remove::<Handle<Mesh>>();
-            commands.entity(entity).remove::<Handle<StandardMaterial>>();
+            entity_commands.insert((mesh_handle, material));
+        } else {
+            entity_commands.remove::<Handle<Mesh>>();
+            entity_commands.remove::<Handle<StandardMaterial>>();
         }
 
-        // Add water mesh as a child entity if it has vertices
-        if water_mesh.count_vertices() > 0 {
-            let water_mesh_handle = meshes.add(water_mesh);
-            let water_material = if let Some(atlas) = &texture_atlas {
+        drop(entity_commands);
+
+        if water_vertices > 0 {
+            let water_mesh_handle = meshes.add(result.water_mesh);
+            let water_material = if let Some(atlas) = atlas_option {
                 materials.add(StandardMaterial {
                     base_color_texture: Some(atlas.texture.clone()),
-                    base_color: Color::srgba(0.2, 0.6, 1.2, 0.85), // Semi-transparent bright blue
+                    base_color: Color::srgba(0.2, 0.6, 1.2, 0.85),
                     perceptual_roughness: 0.05,
                     metallic: 0.1,
                     reflectance: 0.6,
                     double_sided: true,
                     cull_mode: None,
                     alpha_mode: AlphaMode::Premultiplied,
-                    emissive: Color::srgba(0.0, 0.1, 0.3, 1.0).into(), // Blue emissive glow
+                    emissive: Color::srgba(0.0, 0.1, 0.3, 1.0).into(),
                     ..default()
                 })
             } else {
                 materials.add(StandardMaterial {
-                    base_color: Color::srgba(0.1, 0.4, 0.9, 0.8), // Deeper blue, more opaque
+                    base_color: Color::srgba(0.1, 0.4, 0.9, 0.8),
                     perceptual_roughness: 0.1,
                     metallic: 0.0,
                     reflectance: 0.4,
@@ -122,7 +197,6 @@ pub fn update_chunk_meshes(
                 })
             };
 
-            // Spawn water as a child entity
             let water_entity = commands
                 .spawn((
                     water_mesh_handle,
@@ -137,17 +211,12 @@ pub fn update_chunk_meshes(
         }
     }
 
-    if meshes_generated > 0 {
-        let elapsed = time.elapsed_seconds() - start_time;
-        info!(
-            "Generated {} chunk meshes in {:.2}s (of {} dirty chunks)",
-            meshes_generated, elapsed, total_dirty
-        );
-    } else if total_dirty > 0 {
-        debug!(
-            "No meshes generated but {} chunks are still dirty",
-            total_dirty
-        );
+    if !finished_indices.is_empty() {
+        finished_indices.sort_unstable();
+        for index in finished_indices.into_iter().rev() {
+            let (_entity, task) = mesh_jobs.tasks.swap_remove(index);
+            task.detach();
+        }
     }
 }
 

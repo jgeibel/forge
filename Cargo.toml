@@ -7,7 +7,7 @@ description = "A Minecraft-like MMO with planet-based realms"
 default-run = "forge"
 
 [dependencies]
-bevy = { version = "0.14", features = ["dynamic_linking", "file_watcher"] }
+bevy = { version = "0.14", features = ["dynamic_linking", "file_watcher", "serialize"] }
 # bevy_console = { path = "bevy_console_chat" }  # Disabled - using custom CommandPromptPlugin
 # bevy_egui = "0.30"  # Only needed for bevy_console
 # clap = { version = "4", features = ["derive"] }  # Only needed for bevy_console
@@ -18,6 +18,8 @@ futures-lite = "2.0"
 rand = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+flate2 = "1.0"
+bincode = "1.3"
 syn = { version = "2.0", features = ["full", "parsing", "printing", "visit-mut"] }
 quote = "1.0"
 prettyplease = "0.2"

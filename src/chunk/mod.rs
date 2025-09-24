@@ -18,6 +18,7 @@ impl Plugin for ChunkPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ChunkManager>()
             .init_resource::<ChunkGenerationQueue>()
+            .init_resource::<mesh::ChunkMeshJobs>()
             // World generation systems during loading
             .add_systems(
                 Update,
@@ -28,7 +29,9 @@ impl Plugin for ChunkPlugin {
                     manager::poll_chunk_tasks,
                     manager::sync_dirty_chunks_to_store,
                     manager::collect_chunk_payloads,
-                    mesh::update_chunk_meshes, // Also generate meshes during world generation
+                    mesh::queue_chunk_mesh_builds,
+                    mesh::apply_chunk_mesh_results,
+                    manager::log_chunk_streaming_metrics,
                 )
                     .chain()
                     .run_if(in_state(GameState::GeneratingWorld)),
@@ -38,10 +41,14 @@ impl Plugin for ChunkPlugin {
                 Update,
                 (
                     manager::spawn_chunks_around_player,
+                    manager::spawn_chunk_tasks,
+                    manager::poll_chunk_tasks,
                     manager::despawn_far_chunks,
                     manager::sync_dirty_chunks_to_store,
                     manager::collect_chunk_payloads,
-                    mesh::update_chunk_meshes,
+                    mesh::queue_chunk_mesh_builds,
+                    mesh::apply_chunk_mesh_results,
+                    manager::log_chunk_streaming_metrics,
                 )
                     .chain()
                     .run_if(in_state(GameState::Playing)),

@@ -151,6 +151,11 @@ Runtime chunk persistence is controlled separately:
 - On startup the chunk loader now checks this directory and rehydrates the latest revision of each
   chunk before falling back to procedural baking, so edits survive restarts once persisted files are
   present.
+- World-generation metadata is cached to `FORGE_WORLD_METADATA_PATH` (default
+  `target/world_metadata.bin`) using bincode. The first run bakes plates, hydrology, lithology, and
+  immediately writes the metadata; subsequent runs load this file and skip the expensive 50-second
+  worldgen pass. Legacy `.json` or `.json.gz` files are auto-upgraded. Set `FORGE_WORLD_METADATA_SAVE=0`
+  to disable automatic writes.
 
 For quick inspection of per-plate lithology, use:
 

@@ -1,5 +1,6 @@
 use bevy::math::Vec2;
 use rand::{rngs::StdRng, Rng, SeedableRng};
+use serde::{Deserialize, Serialize};
 use std::f32::consts::TAU;
 
 use crate::world::config::WorldGenConfig;
@@ -7,7 +8,7 @@ use crate::world::config::WorldGenConfig;
 use super::util::{torus_delta, torus_distance, wrap_vec2};
 use super::WorldGenerator;
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub(super) struct ContinentSite {
     pub(super) position: Vec2,
     pub(super) ridge_angle: f32,

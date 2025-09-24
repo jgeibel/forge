@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::cmp::{Ordering, Reverse};
 use std::collections::{BinaryHeap, VecDeque};
 
@@ -15,7 +16,7 @@ const NEIGHBORS: [(isize, isize); 8] = [
     (1, 1),
 ];
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, Serialize, Deserialize)]
 #[allow(dead_code)]
 pub(crate) struct HydrologySample {
     pub(super) channel_depth: f32,
@@ -27,7 +28,7 @@ pub(crate) struct HydrologySample {
     pub(super) coastal_factor: f32,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub(super) struct HydrologySimulation {
     pub(super) width: usize,
     pub(super) height: usize,

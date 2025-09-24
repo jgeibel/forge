@@ -61,7 +61,7 @@ pub struct TextureInfo {
     pub animation_frames: Option<Vec<usize>>,
 }
 
-#[derive(Resource)]
+#[derive(Resource, Clone)]
 pub struct BlockTextureAtlas {
     pub texture: Handle<Image>,
     pub atlas_size: Vec2,

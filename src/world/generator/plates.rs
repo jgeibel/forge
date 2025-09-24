@@ -1,4 +1,5 @@
 use bevy::math::Vec2;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 use crate::world::config::WorldGenConfig;
@@ -6,7 +7,7 @@ use crate::world::config::WorldGenConfig;
 use super::continents::ContinentSite;
 use super::util::{torus_delta, torus_distance, wrap_vec2};
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, Serialize, Deserialize)]
 pub(crate) struct PlateSample {
     pub(super) plate_id: usize,
     pub(super) drift: Vec2,
@@ -16,7 +17,7 @@ pub(crate) struct PlateSample {
 }
 
 #[allow(dead_code)]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub(super) struct PlateInfo {
     pub(super) id: usize,
     pub(super) site_index: usize,
@@ -28,7 +29,7 @@ pub(super) struct PlateInfo {
 }
 
 #[allow(dead_code)]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub(super) struct PlateBoundary {
     pub(super) plates: (usize, usize),
     pub(super) length: f32,
@@ -36,7 +37,7 @@ pub(super) struct PlateBoundary {
     pub(super) relative_drift: Vec2,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub(super) struct PlateMap {
     pub(super) width: usize,
     pub(super) height: usize,
@@ -240,6 +241,7 @@ impl PlateMap {
         }
     }
 
+    #[allow(dead_code)]
     pub(super) fn plate_index(&self, u: f32, v: f32) -> usize {
         if self.plates.is_empty() || self.width == 0 || self.height == 0 {
             return 0;
@@ -250,6 +252,68 @@ impl PlateMap {
         let x = wrap_index(xf.floor() as isize, self.width as isize) as usize;
         let y = wrap_index(yf.floor() as isize, self.height as isize) as usize;
         self.assignment[y * self.width + x]
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn plate_weights(&self, u: f32, v: f32) -> Vec<(usize, f32)> {
+        if self.plates.is_empty() || self.width == 0 || self.height == 0 {
+            return vec![(0, 1.0)];
+        }
+
+        let xf = (u.rem_euclid(1.0)) * self.width as f32;
+        let yf = (v.rem_euclid(1.0)) * self.height as f32;
+        let x = xf.floor() as isize;
+        let y = yf.floor() as isize;
+
+        let width = self.width as isize;
+        let height = self.height as isize;
+
+        let xi = wrap_index(x, width) as usize;
+        let yi = wrap_index(y, height) as usize;
+        let primary = self.assignment[yi * self.width + xi];
+        let current = cell_position(self.width, self.height, x, y);
+
+        use std::collections::HashMap;
+        let mut weights: HashMap<usize, f32> = HashMap::new();
+        weights.insert(primary, 1.0);
+
+        for dy in -1..=1 {
+            for dx in -1..=1 {
+                if dx == 0 && dy == 0 {
+                    continue;
+                }
+
+                let nx = wrap_index(x + dx, width) as usize;
+                let ny = wrap_index(y + dy, height) as usize;
+                let other = self.assignment[ny * self.width + nx];
+
+                if other == primary {
+                    continue;
+                }
+
+                let neighbor_pos = cell_position(self.width, self.height, x + dx, y + dy);
+                let diff = Vec2::new(
+                    torus_delta(current.x, neighbor_pos.x),
+                    torus_delta(current.y, neighbor_pos.y),
+                );
+                let distance = diff.length().max(1e-4);
+                let weight = 1.0 / distance;
+
+                *weights.entry(other).or_insert(0.0) += weight;
+            }
+        }
+
+        if weights.len() == 1 {
+            return vec![(primary, 1.0)];
+        }
+
+        let total: f32 = weights.values().sum();
+        let mut entries: Vec<(usize, f32)> = weights
+            .into_iter()
+            .map(|(plate, w)| (plate, (w / total).clamp(0.0, 1.0)))
+            .collect();
+        entries.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        entries
     }
 }
 

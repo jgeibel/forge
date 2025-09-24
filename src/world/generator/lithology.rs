@@ -1,17 +1,18 @@
 use rand::{rngs::StdRng, Rng, SeedableRng};
+use serde::{Deserialize, Serialize};
 
 use crate::block::BlockType;
 use crate::world::config::WorldGenConfig;
 
 use super::plates::{PlateInfo, PlateMap};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LithologyLayer {
     pub block: BlockType,
     pub thickness: u8,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LithologyProfile {
     pub surface_block: BlockType,
     pub surface_depth: u8,

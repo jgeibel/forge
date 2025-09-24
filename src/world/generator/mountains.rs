@@ -1,6 +1,7 @@
 use bevy::math::Vec2;
 use noise::Perlin;
 use rand::{rngs::StdRng, Rng, SeedableRng};
+use serde::{Deserialize, Serialize};
 use std::f32::consts::TAU;
 
 use crate::world::config::WorldGenConfig;
@@ -11,7 +12,7 @@ use super::util::{
     rotate_vec2, torus_delta, torus_distance, torus_noise, wrap_index, wrap_index_isize, wrap_vec2,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub(super) struct MountainRangeMap {
     pub(super) width: usize,
     pub(super) height: usize,
