@@ -3,7 +3,11 @@ use image::{ImageBuffer, Rgba};
 use noise::Perlin;
 use std::path::{Path, PathBuf};
 
+use super::chunk_store::{
+    ChunkPayloadQueue, ChunkPayloadReady, PayloadDebugPlugin, PlanetChunkStore,
+};
 use super::config::{CurrentTemperature, WorldGenConfig};
+use super::persistence::{ChunkPersistencePlugin, DiskChunkPersistence, PersistenceConfig};
 use crate::camera::PlayerCamera;
 use crate::loading::GameState;
 use crate::planet::PlanetConfig;
@@ -12,11 +16,13 @@ mod continents;
 mod hydrology;
 mod mountains;
 mod phases;
+mod plates;
 mod util;
 
 use continents::{generate_continent_sites, ContinentSite};
 use hydrology::HydrologySimulation;
 use mountains::MountainRangeMap;
+use plates::{PlateMap, PlateSample};
 
 /// Logical phases in the world generation pipeline.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -62,6 +68,7 @@ pub struct WorldGenerator {
     hydrology_rain_noise: Perlin,
     continent_sites: Vec<ContinentSite>,
     mountain_ranges: MountainRangeMap,
+    plate_map: PlateMap,
     hydrology: HydrologySimulation,
 }
 
@@ -102,11 +109,13 @@ impl WorldGenerator {
             hydrology_rain_noise,
             continent_sites: Vec::new(),
             mountain_ranges: MountainRangeMap::empty(),
+            plate_map: PlateMap::empty(),
             hydrology: HydrologySimulation::empty(),
         };
 
         progress.on_phase(WorldGenPhase::Continents);
         generator.continent_sites = generate_continent_sites(&generator.config);
+        generator.plate_map = PlateMap::generate(&generator.config, &generator.continent_sites);
 
         progress.on_phase(WorldGenPhase::Terrain);
         generator.initialize_terrain_phase();
@@ -157,6 +166,10 @@ impl WorldGenerator {
         // Islands rely on procedural noise at sample time, so no precomputation yet.
     }
 
+    pub(super) fn plate_sample(&self, u: f32, v: f32) -> PlateSample {
+        self.plate_map.sample(u, v)
+    }
+
     pub fn export_planet_preview<P: AsRef<Path>>(
         &self,
         width: u32,
@@ -191,6 +204,24 @@ pub struct WorldPlugin;
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<CurrentTemperature>()
+            .init_resource::<PlanetChunkStore>()
+            .init_resource::<ChunkPayloadQueue>()
+            .add_event::<ChunkPayloadReady>()
+            .add_plugins(PayloadDebugPlugin)
+            .add_plugins(ChunkPersistencePlugin::new(
+                DiskChunkPersistence::new(
+                    std::env::var("FORGE_PERSISTENCE_DIR")
+                        .ok()
+                        .filter(|dir| !dir.trim().is_empty())
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("target/chunk_payload_persistence")),
+                ),
+                PersistenceConfig {
+                    enabled: std::env::var("FORGE_PERSISTENCE_ENABLED")
+                        .map(|value| !matches!(value.trim(), "0" | "false" | "False" | "FALSE"))
+                        .unwrap_or(true),
+                },
+            ))
             .add_systems(Startup, setup_world_generator)
             .add_systems(
                 Update,

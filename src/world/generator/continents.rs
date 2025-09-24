@@ -19,14 +19,6 @@ pub(super) struct ContinentSite {
     pub(super) drift: Vec2,
 }
 
-#[derive(Clone, Copy, Default)]
-pub(super) struct PlateSample {
-    pub(super) drift: Vec2,
-    pub(super) convergence: f32,
-    pub(super) divergence: f32,
-    pub(super) shear: f32,
-}
-
 pub(super) fn generate_continent_sites(config: &WorldGenConfig) -> Vec<ContinentSite> {
     let mut rng = StdRng::seed_from_u64(config.seed);
     let n = config.continent_count.max(1);
@@ -186,112 +178,6 @@ pub(super) fn generate_continent_sites(config: &WorldGenConfig) -> Vec<Continent
 }
 
 impl WorldGenerator {
-    pub(super) fn plate_sample(&self, u: f32, v: f32) -> PlateSample {
-        if self.continent_sites.is_empty() {
-            return PlateSample::default();
-        }
-
-        let base_radius = self.config.continent_radius.max(0.01_f32);
-        let global_edge = self.config.continent_edge_power.max(0.1_f32);
-        let coastal_cycles = (self.config.continent_frequency * 0.35).max(0.05);
-        let coastal_noise =
-            self.periodic_noise(&self.continent_noise, u as f64, v as f64, coastal_cycles) as f32;
-        let jitter = base_radius * 0.1_f32 * coastal_noise;
-
-        let mut total_weight = 0.0_f32;
-        let mut combined_drift = Vec2::ZERO;
-
-        let mut best = (0.0_f32, None);
-        let mut second = (0.0_f32, None);
-
-        for (index, site) in self.continent_sites.iter().enumerate() {
-            let mut du = torus_distance(u, site.position.x);
-            let mut dv = torus_distance(v, site.position.y);
-
-            if jitter.abs() > f32::EPSILON {
-                let dir = Vec2::new(site.ridge_angle.cos(), site.ridge_angle.sin());
-                du += dir.x * jitter;
-                dv += dir.y * jitter;
-            }
-
-            let delta = Vec2::new(du, dv);
-
-            let cos_o = site.orientation.cos();
-            let sin_o = site.orientation.sin();
-            let rotated_x = delta.x * cos_o + delta.y * sin_o;
-            let rotated_y = -delta.x * sin_o + delta.y * cos_o;
-
-            let axis = site.axis_ratio.max(0.2_f32);
-            let major = (base_radius * site.radius_scale * axis).max(0.01_f32);
-            let minor = (base_radius * site.radius_scale / axis).max(0.01_f32);
-
-            let normalized = ((rotated_x / major).powi(2) + (rotated_y / minor).powi(2)).sqrt();
-            let interior = (1.0 - normalized).max(0.0);
-            let edge = (global_edge * site.edge_power).clamp(0.2_f32, 4.0_f32);
-            let core = interior.powf(edge);
-            let feather = (-normalized.powf(1.35_f32) * 1.25_f32).exp();
-            let influence = (core * 0.85_f32 + feather * 0.35_f32).clamp(0.0, 1.0);
-
-            if influence <= 0.0005_f32 {
-                continue;
-            }
-
-            let weighted = influence * site.weight;
-            total_weight += weighted;
-            combined_drift += site.drift * weighted;
-
-            if influence > best.0 {
-                second = best;
-                best = (influence, Some(index));
-            } else if influence > second.0 {
-                second = (influence, Some(index));
-            }
-        }
-
-        if total_weight <= f32::EPSILON {
-            return PlateSample::default();
-        }
-
-        let drift = combined_drift / total_weight;
-
-        let mut convergence = 0.0_f32;
-        let mut divergence = 0.0_f32;
-        let mut shear = 0.0_f32;
-
-        if let (Some(a), Some(b)) = (best.1, second.1) {
-            let site_a = &self.continent_sites[a];
-            let site_b = &self.continent_sites[b];
-
-            let mut sep = Vec2::new(
-                torus_delta(site_a.position.x, site_b.position.x),
-                torus_delta(site_a.position.y, site_b.position.y),
-            );
-            let distance = sep.length().max(0.0001);
-            sep /= distance;
-
-            let drift_a = site_a.drift;
-            let drift_b = site_b.drift;
-
-            let secondary_weight = second.0;
-            let toward = (drift_a.dot(sep).max(0.0) + drift_b.dot(-sep).max(0.0))
-                * secondary_weight.powf(1.2);
-            let away = (-drift_a.dot(sep)).max(0.0) + (-drift_b.dot(-sep)).max(0.0);
-            convergence = toward;
-            divergence = away * secondary_weight.powf(1.1);
-
-            let perp = Vec2::new(-sep.y, sep.x);
-            let shear_a = drift_a.dot(perp);
-            let shear_b = drift_b.dot(perp);
-            shear = (shear_a - shear_b).abs() * secondary_weight.powf(1.15);
-        }
-
-        PlateSample {
-            drift,
-            convergence,
-            divergence,
-            shear,
-        }
-    }
     pub(super) fn continent_site_mask(&self, u: f32, v: f32) -> f32 {
         if self.continent_sites.is_empty() {
             return 1.0;

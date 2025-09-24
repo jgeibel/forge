@@ -67,12 +67,13 @@ impl WorldGenerator {
     fn sample_temperature_c(&self, world_x: f32, world_z: f32, height: f32) -> f32 {
         let size = self.config.planet_size.max(1) as f32;
         let latitude = ((world_z / size).rem_euclid(1.0) - 0.5).abs();
-        let lat_factor = (1.0 - latitude * 2.0).clamp(0.0, 1.0);
+        let lat_angle = (latitude * std::f32::consts::PI).clamp(0.0, std::f32::consts::FRAC_PI_2);
+        let insolation = lat_angle.cos().clamp(0.0, 1.0);
 
         let base_temp = lerp_f32(
             self.config.pole_temp_c,
             self.config.equator_temp_c,
-            lat_factor,
+            insolation,
         );
 
         let elevation_above_sea = (height - self.config.sea_level).max(0.0);

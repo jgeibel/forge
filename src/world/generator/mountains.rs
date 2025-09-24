@@ -5,7 +5,8 @@ use std::f32::consts::TAU;
 
 use crate::world::config::WorldGenConfig;
 
-use super::continents::{ContinentSite, PlateSample};
+use super::continents::ContinentSite;
+use super::plates::PlateSample;
 use super::util::{
     rotate_vec2, torus_delta, torus_distance, torus_noise, wrap_index, wrap_index_isize, wrap_vec2,
 };
@@ -112,7 +113,9 @@ impl MountainRangeMap {
                 );
             }
             map.normalize();
-            map.apply_erosion(3);
+            if erosion_iterations > 0 {
+                map.apply_erosion(erosion_iterations);
+            }
             return map;
         }
 

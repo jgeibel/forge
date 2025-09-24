@@ -113,6 +113,45 @@ Forge is a voxel-based MMO that combines Minecraft-style gameplay with a univers
   ```
 - **Partitioning**: By planet_id for data locality
 
+### Chunk Payload Format
+
+To support on-demand streaming and persistence, baked voxel chunks are packaged using
+the `v1` chunk payload format:
+
+- **Magic**: `FBCH` (4 bytes) followed by a one-byte `version` field.
+- **Palette**: `u16` length + packed list of unique block IDs (`BlockType` as `u8`). A single chunk
+  usually stays below 32 unique block types, keeping the palette tiny.
+- **Runs**: `u32` run count + run entries (`u16` palette index, `u16` length). Runs are stored in
+  X-major order and always sum to `32×32×32` voxels. This RLE compresses air-heavy chunks down to a
+  few dozen bytes while staying CPU-cheap to decode.
+
+`ChunkStorage::encode_payload` collapses raw voxel arrays into this payload, while
+`ChunkStorage::from_payload` restores the in-memory layout for rendering and physics.
+The format is intentionally forward-compatible: newer payload versions should increment the
+version byte and keep the existing header so old servers can reject unsupported data cleanly.
+
+To inspect payloads during development set `FORGE_DEBUG_CHUNK_PAYLOADS_DIR` (defaults to no-op)
+and run the game or tools—the chunk pipeline will emit serialized blobs to that directory as
+chunks bake or mutate. For a quick end-to-end check without the full client, run the harness:
+
+```
+cargo run --bin chunk_payload_debug [output_dir]
+```
+
+The binary generates a sample chunk, applies an edit, and writes the resulting payload revisions to
+`target/chunk_payload_debug/` (or the provided directory). Remove the directory when you’re done to
+avoid stale captures.
+
+Runtime chunk persistence is controlled separately:
+
+- `FORGE_PERSISTENCE_DIR` (default `target/chunk_payload_persistence/`) points the live persistence
+  handler at a writable directory. This is a stub that mirrors the future planet-server writer.
+- `FORGE_PERSISTENCE_ENABLED` accepts `0/false` to disable the handler while keeping the rest of the
+  pipeline intact. Any other value (or absence) keeps it on.
+- On startup the chunk loader now checks this directory and rehydrates the latest revision of each
+  chunk before falling back to procedural baking, so edits survive restarts once persisted files are
+  present.
+
 **PostgreSQL (Player Data)**
 - **Why**: ACID compliance, complex queries, JSONB for flexible schemas
 - **Tables**:

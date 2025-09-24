@@ -5,6 +5,7 @@ use super::super::{
     WorldGenerator,
 };
 use crate::block::BlockType;
+use crate::chunk::{ChunkPos, ChunkStorage};
 use crate::world::biome::Biome;
 
 impl WorldGenerator {
@@ -44,6 +45,16 @@ impl WorldGenerator {
         }
 
         BlockType::Stone
+    }
+
+    pub fn bake_chunk(&self, chunk_pos: ChunkPos) -> ChunkStorage {
+        let world_origin = chunk_pos.to_world_pos();
+        ChunkStorage::from_fn(|x, y, z| {
+            let world_x = world_origin.x + x as f32;
+            let world_y = world_origin.y + y as f32;
+            let world_z = world_origin.z + z as f32;
+            self.get_block(world_x, world_y, world_z)
+        })
     }
 
     pub fn preview_color(&self, world_x: f32, world_z: f32, biome: Biome, height: f32) -> [u8; 4] {

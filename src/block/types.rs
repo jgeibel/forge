@@ -112,6 +112,30 @@ impl BlockType {
             _ => [1.0, 1.0, 1.0, 1.0],
         }
     }
+
+    pub fn to_u8(self) -> u8 {
+        self as u8
+    }
+
+    pub fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            0 => Some(BlockType::Air),
+            1 => Some(BlockType::Stone),
+            2 => Some(BlockType::Dirt),
+            3 => Some(BlockType::Grass),
+            4 => Some(BlockType::Wood),
+            5 => Some(BlockType::Leaves),
+            6 => Some(BlockType::Sand),
+            7 => Some(BlockType::Water),
+            8 => Some(BlockType::Cobblestone),
+            9 => Some(BlockType::Planks),
+            10 => Some(BlockType::Bedrock),
+            11 => Some(BlockType::Snow),
+            12 => Some(BlockType::Ice),
+            13 => Some(BlockType::PackedIce),
+            _ => None,
+        }
+    }
 }
 
 impl Default for BlockType {
