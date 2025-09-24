@@ -8,6 +8,7 @@ use super::util::{torus_delta, torus_distance, wrap_vec2};
 
 #[derive(Clone, Copy, Default)]
 pub(crate) struct PlateSample {
+    pub(super) plate_id: usize,
     pub(super) drift: Vec2,
     pub(super) convergence: f32,
     pub(super) divergence: f32,
@@ -231,11 +232,24 @@ impl PlateMap {
         }
 
         PlateSample {
+            plate_id: primary,
             drift: primary_info.drift,
             convergence,
             divergence,
             shear,
         }
+    }
+
+    pub(super) fn plate_index(&self, u: f32, v: f32) -> usize {
+        if self.plates.is_empty() || self.width == 0 || self.height == 0 {
+            return 0;
+        }
+
+        let xf = (u.rem_euclid(1.0)) * self.width as f32;
+        let yf = (v.rem_euclid(1.0)) * self.height as f32;
+        let x = wrap_index(xf.floor() as isize, self.width as isize) as usize;
+        let y = wrap_index(yf.floor() as isize, self.height as isize) as usize;
+        self.assignment[y * self.width + x]
     }
 }
 

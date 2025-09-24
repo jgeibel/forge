@@ -1,5 +1,6 @@
 use crate::block::BlockType;
 use bevy::prelude::*;
+use rand::{rngs::StdRng, Rng, SeedableRng};
 use std::collections::HashMap;
 
 pub const CHUNK_SIZE: usize = 32;
@@ -471,7 +472,9 @@ impl Chunk {
         position: ChunkPos,
         world_gen: &crate::world::WorldGenerator,
     ) -> Self {
-        let storage = world_gen.bake_chunk(position);
+        let mut storage = world_gen.bake_chunk(position);
+        apply_lithology_layers(position, &mut storage, world_gen);
+        carve_caves_and_ores(position, &mut storage, world_gen);
         Self::from_storage(position, storage)
     }
 
@@ -515,5 +518,94 @@ impl Chunk {
         }
 
         false
+    }
+}
+
+fn apply_lithology_layers(
+    chunk_pos: ChunkPos,
+    storage: &mut ChunkStorage,
+    world_gen: &crate::world::WorldGenerator,
+) {
+    let world_origin = chunk_pos.to_world_pos();
+
+    for x in 0..CHUNK_SIZE {
+        for z in 0..CHUNK_SIZE {
+            let profile = world_gen
+                .lithology_profile_at(world_origin.x + x as f32, world_origin.z + z as f32);
+            let mut remaining = profile.surface_depth.max(1) as i32;
+
+            for y in (0..CHUNK_SIZE).rev() {
+                let mut block = storage.get(x, y, z);
+
+                if block == crate::block::BlockType::Air {
+                    continue;
+                }
+
+                if remaining > 0 {
+                    block = profile.surface_block;
+                    remaining -= 1;
+                } else {
+                    let mut depth = profile.surface_depth as i32;
+                    let mut replaced = false;
+                    for layer in &profile.strata {
+                        depth += layer.thickness as i32;
+                        if world_origin.y as i32 + CHUNK_SIZE as i32 - (y as i32 + 1) < depth {
+                            block = layer.block;
+                            replaced = true;
+                            break;
+                        }
+                    }
+
+                    if !replaced {
+                        block = profile.basement_block;
+                    }
+                }
+
+                storage.set(x, y, z, block);
+            }
+        }
+    }
+}
+
+fn carve_caves_and_ores(
+    chunk_pos: ChunkPos,
+    storage: &mut ChunkStorage,
+    world_gen: &crate::world::WorldGenerator,
+) {
+    let world_origin = chunk_pos.to_world_pos();
+    let seed = world_gen.config().seed;
+
+    for x in 0..CHUNK_SIZE {
+        for z in 0..CHUNK_SIZE {
+            let profile = world_gen
+                .lithology_profile_at(world_origin.x + x as f32, world_origin.z + z as f32);
+
+            let column_seed = seed
+                ^ ((world_origin.x as i64 + x as i64) as u64).wrapping_mul(0x9E3779B97F4A7C15)
+                ^ ((world_origin.z as i64 + z as i64) as u64).wrapping_mul(0xC2B2AE3D27D4EB4F)
+                ^ ((chunk_pos.y as i64) as u64).wrapping_mul(0x165667B19E3779F9);
+            let mut rng = StdRng::seed_from_u64(column_seed);
+
+            let cave_threshold = (profile.cave_bias * 0.015).clamp(0.0, 0.35);
+            let ore_threshold = (profile.ore_bias * 0.01).clamp(0.0, 0.25);
+
+            for y in (0..CHUNK_SIZE).rev() {
+                let block = storage.get(x, y, z);
+                if !block.is_solid() || matches!(block, BlockType::Bedrock) {
+                    continue;
+                }
+
+                if y > 2 && rng.gen::<f32>() < cave_threshold {
+                    storage.set(x, y, z, BlockType::Air);
+                    continue;
+                }
+
+                if matches!(block, BlockType::Stone | BlockType::Cobblestone)
+                    && rng.gen::<f32>() < ore_threshold
+                {
+                    storage.set(x, y, z, BlockType::Cobblestone);
+                }
+            }
+        }
     }
 }

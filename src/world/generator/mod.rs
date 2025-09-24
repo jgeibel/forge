@@ -14,6 +14,7 @@ use crate::planet::PlanetConfig;
 
 mod continents;
 mod hydrology;
+mod lithology;
 mod mountains;
 mod phases;
 mod plates;
@@ -21,6 +22,7 @@ mod util;
 
 use continents::{generate_continent_sites, ContinentSite};
 use hydrology::HydrologySimulation;
+use lithology::{generate_plate_lithology, LithologyProfile};
 use mountains::MountainRangeMap;
 use plates::{PlateMap, PlateSample};
 
@@ -69,6 +71,7 @@ pub struct WorldGenerator {
     continent_sites: Vec<ContinentSite>,
     mountain_ranges: MountainRangeMap,
     plate_map: PlateMap,
+    plate_lithology: Vec<LithologyProfile>,
     hydrology: HydrologySimulation,
 }
 
@@ -110,6 +113,7 @@ impl WorldGenerator {
             continent_sites: Vec::new(),
             mountain_ranges: MountainRangeMap::empty(),
             plate_map: PlateMap::empty(),
+            plate_lithology: Vec::new(),
             hydrology: HydrologySimulation::empty(),
         };
 
@@ -134,6 +138,16 @@ impl WorldGenerator {
 
         progress.on_phase(WorldGenPhase::Hydrology);
         generator.hydrology = HydrologySimulation::generate(&generator);
+
+        generator.plate_lithology = generate_plate_lithology(
+            &generator.config,
+            &generator.plate_map,
+            |world_x, world_z| {
+                let height = generator.get_height(world_x, world_z);
+                let water = generator.get_water_level(world_x, world_z);
+                (height, water)
+            },
+        );
 
         progress.on_phase(WorldGenPhase::Finalize);
         generator
@@ -168,6 +182,14 @@ impl WorldGenerator {
 
     pub(super) fn plate_sample(&self, u: f32, v: f32) -> PlateSample {
         self.plate_map.sample(u, v)
+    }
+
+    pub fn lithology_profile_at(&self, world_x: f32, world_z: f32) -> &LithologyProfile {
+        let planet_size = self.config.planet_size as f32;
+        let u = (world_x / planet_size).rem_euclid(1.0);
+        let v = (world_z / planet_size).rem_euclid(1.0);
+        let plate_index = self.plate_map.plate_index(u, v);
+        &self.plate_lithology[plate_index]
     }
 
     pub fn export_planet_preview<P: AsRef<Path>>(

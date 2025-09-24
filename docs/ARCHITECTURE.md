@@ -152,6 +152,15 @@ Runtime chunk persistence is controlled separately:
   chunk before falling back to procedural baking, so edits survive restarts once persisted files are
   present.
 
+For quick inspection of per-plate lithology, use:
+
+```
+cargo run --bin lithology_probe <world_x> <world_z> [planet_size_blocks]
+```
+
+This prints the surface block, strata thicknesses, basement type, and cave/ore bias that will be
+applied when chunks at that location are baked.
+
 **PostgreSQL (Player Data)**
 - **Why**: ACID compliance, complex queries, JSONB for flexible schemas
 - **Tables**:
