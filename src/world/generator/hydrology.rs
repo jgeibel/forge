@@ -381,11 +381,8 @@ impl HydrologySimulation {
                     lake_intensity[idx] = 0.0;
                     major_flow[idx] = discharge_norm.powf(0.45);
                 } else {
-                    water_level[idx] = if base_height[idx] <= sea_level {
-                        sea_level
-                    } else {
-                        base_height[idx]
-                    };
+                    // Dry land should sit at sea level so chunk baking doesn't flood mountains.
+                    water_level[idx] = sea_level;
                     river_intensity[idx] = 0.0;
                     lake_intensity[idx] = 0.0;
                     major_flow[idx] = 0.0;

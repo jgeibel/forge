@@ -2,6 +2,7 @@ use crate::loading::GameState;
 use bevy::prelude::*;
 
 pub mod data;
+pub mod far;
 pub mod manager;
 pub mod mesh;
 
@@ -19,6 +20,7 @@ impl Plugin for ChunkPlugin {
         app.init_resource::<ChunkManager>()
             .init_resource::<ChunkGenerationQueue>()
             .init_resource::<mesh::ChunkMeshJobs>()
+            .init_resource::<far::FarTileTracker>()
             // World generation systems during loading
             .add_systems(
                 Update,
@@ -32,6 +34,7 @@ impl Plugin for ChunkPlugin {
                     mesh::queue_chunk_mesh_builds,
                     mesh::apply_chunk_mesh_results,
                     manager::log_chunk_streaming_metrics,
+                    far::update_far_tiles,
                 )
                     .chain()
                     .run_if(in_state(GameState::GeneratingWorld)),
@@ -49,6 +52,7 @@ impl Plugin for ChunkPlugin {
                     mesh::queue_chunk_mesh_builds,
                     mesh::apply_chunk_mesh_results,
                     manager::log_chunk_streaming_metrics,
+                    far::update_far_tiles,
                 )
                     .chain()
                     .run_if(in_state(GameState::Playing)),

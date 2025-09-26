@@ -1,9 +1,11 @@
 use crate::camera::PlayerCamera;
 use bevy::prelude::*;
 
-// Simple render distance constants
-const RENDER_DISTANCE_GROUND: f32 = 8.0; // 8 chunks at ground level
-const RENDER_DISTANCE_HIGH: f32 = 8.0; // 8 chunks when high up
+// Simple render distance constants (chunk count)
+// Keep ground distance aligned with the far-tile inner exclusion so there is
+// no visible gap between near meshes and distant tiles.
+const RENDER_DISTANCE_GROUND: f32 = 10.0;
+const RENDER_DISTANCE_HIGH: f32 = 12.0;
 
 #[derive(Resource)]
 pub struct AltitudeRenderSystem {
@@ -29,7 +31,7 @@ pub fn update_render_distance(
     let altitude = camera_transform.translation.y;
 
     // Simple render distance based on altitude
-    altitude_system.render_distance = if altitude > 128.0 {
+    altitude_system.render_distance = if altitude > 160.0 {
         RENDER_DISTANCE_HIGH
     } else {
         RENDER_DISTANCE_GROUND

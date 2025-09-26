@@ -4,8 +4,8 @@ pub mod core {
     pub const SEA_LEVEL: f32 = 64.0;
 }
 pub mod ocean {
-    pub const OCEAN_DEPTH: f32 = 24.0;
-    pub const DEEP_OCEAN_DEPTH: f32 = 40.0;
+    pub const OCEAN_DEPTH: f32 = 26_f32;
+    pub const DEEP_OCEAN_DEPTH: f32 = 42_f32;
 }
 pub mod continent {
     pub const CONTINENT_THRESHOLD: f32 = 0.14000002_f32;

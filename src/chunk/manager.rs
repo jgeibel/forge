@@ -16,7 +16,7 @@ use futures_lite::future;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
-const MAX_CONCURRENT_CHUNK_TASKS: usize = 8;
+const MAX_CONCURRENT_CHUNK_TASKS: usize = 6;
 const MAX_IMMEDIATE_CHUNKS_PER_FRAME: i32 = 4;
 const MAX_QUEUED_CHUNKS_PER_FRAME: i32 = 48;
 const PREFETCH_MARGIN: i32 = 2;
@@ -432,6 +432,10 @@ pub fn spawn_chunks_around_player(
         }
 
         if chunk_queue.contains(&chunk_pos) {
+            continue;
+        }
+
+        if chunk_queue.pending_chunks.contains(&chunk_pos) {
             continue;
         }
 

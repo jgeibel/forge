@@ -10,13 +10,35 @@ use bevy::ui::{Display, TargetCamera};
 use bevy::window::{PresentMode, PrimaryWindow, WindowRef, WindowResolution};
 
 use forge::planet::PlanetSize;
-use forge::world::{Biome, WorldGenConfig, WorldGenPhase, WorldGenerator};
+use forge::world::{
+    package::planet_package_paths, Biome, WorldGenConfig, WorldGenPhase, WorldGenerator,
+};
 use std::collections::HashMap;
+use std::fs;
+use std::path::PathBuf;
 
 mod source_updater;
 
 const MAP_WIDTH: u32 = 512; // Lower initial resolution for faster rendering
 const MAP_HEIGHT: u32 = 256; // Lower initial resolution for faster rendering
+const DEFAULT_WORLD_NAME: &str = "Alpha";
+
+#[derive(Resource, Default)]
+struct SavePlanetDialogState {
+    root: Option<Entity>,
+}
+
+#[derive(Component)]
+struct SavePlanetButton;
+
+#[derive(Component)]
+struct SavePlanetDialogRoot;
+
+#[derive(Component)]
+struct SavePlanetDialogSave;
+
+#[derive(Component)]
+struct SavePlanetDialogCancel;
 
 fn main() {
     App::new()
@@ -32,6 +54,7 @@ fn main() {
         }))
         .init_resource::<ButtonMaterials>()
         .init_resource::<DetailWindow>()
+        .init_resource::<SavePlanetDialogState>()
         .add_event::<RegenerateRequested>()
         .add_systems(Startup, setup)
         .add_systems(
@@ -45,6 +68,8 @@ fn main() {
                 handle_visualization_buttons,
                 handle_regenerate_button,
                 handle_save_to_source_button,
+                handle_save_planet_button,
+                handle_save_planet_dialog,
             ),
         )
         .add_systems(
@@ -1547,6 +1572,34 @@ fn build_control_panel(
                                     },
                                 ));
                             });
+
+                        buttons
+                            .spawn(ButtonBundle {
+                                style: Style {
+                                    width: Val::Px(120.0),
+                                    height: Val::Px(28.0),
+                                    justify_content: JustifyContent::Center,
+                                    align_items: AlignItems::Center,
+                                    border: UiRect::all(Val::Px(1.0)),
+                                    ..default()
+                                },
+                                background_color: BackgroundColor(Color::srgba(
+                                    0.12, 0.32, 0.24, 0.95,
+                                )),
+                                border_color: BorderColor(Color::srgba(0.16, 0.44, 0.38, 0.8)),
+                                ..default()
+                            })
+                            .insert(SavePlanetButton)
+                            .with_children(|b| {
+                                b.spawn(TextBundle::from_section(
+                                    "SAVE PLANET",
+                                    TextStyle {
+                                        font_size: 14.0,
+                                        color: Color::srgb(0.9, 0.98, 0.93),
+                                        ..default()
+                                    },
+                                ));
+                            });
                     });
             });
 
@@ -2571,6 +2624,41 @@ fn render_block_detail(
     }
 }
 
+fn save_planet_package_files(world_name: &str, config: &WorldGenConfig) -> Result<PathBuf, String> {
+    let (config_path, metadata_path) = planet_package_paths(world_name);
+
+    if let Some(parent) = config_path.parent() {
+        if let Err(err) = fs::create_dir_all(parent) {
+            return Err(format!(
+                "failed to create planet directory {:?}: {}",
+                parent, err
+            ));
+        }
+    }
+
+    let json = serde_json::to_string_pretty(config)
+        .map_err(|err| format!("failed to serialize planet config: {}", err))?;
+    if let Err(err) = fs::write(&config_path, json) {
+        return Err(format!(
+            "failed to write planet config {:?}: {}",
+            config_path, err
+        ));
+    }
+
+    let generator = WorldGenerator::with_progress(config.clone(), |_| {});
+    generator
+        .metadata()
+        .save_to_file(&metadata_path)
+        .map_err(|err| {
+            format!(
+                "failed to write planet metadata {:?}: {}",
+                metadata_path, err
+            )
+        })?;
+
+    Ok(config_path)
+}
+
 fn handle_save_to_source_button(
     materials: Res<ButtonMaterials>,
     mut interaction_query: Query<
@@ -2609,6 +2697,209 @@ fn handle_save_to_source_button(
             Interaction::Hovered => *color = materials.hovered,
             Interaction::None => *color = materials.normal,
         }
+    }
+}
+
+fn handle_save_planet_button(
+    materials: Res<ButtonMaterials>,
+    mut interaction_query: Query<
+        (&Interaction, &mut BackgroundColor),
+        (Changed<Interaction>, With<SavePlanetButton>),
+    >,
+    mut dialog_state: ResMut<SavePlanetDialogState>,
+    mut commands: Commands,
+) {
+    for (interaction, mut color) in interaction_query.iter_mut() {
+        match *interaction {
+            Interaction::Pressed => {
+                *color = materials.pressed;
+                if dialog_state.root.is_none() {
+                    let entity = spawn_save_planet_dialog(&mut commands);
+                    dialog_state.root = Some(entity);
+                }
+            }
+            Interaction::Hovered => *color = materials.hovered,
+            Interaction::None => *color = materials.normal,
+        }
+    }
+}
+
+fn spawn_save_planet_dialog(commands: &mut Commands) -> Entity {
+    let root = commands
+        .spawn((
+            NodeBundle {
+                style: Style {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(0.0),
+                    top: Val::Px(0.0),
+                    width: Val::Percent(100.0),
+                    height: Val::Percent(100.0),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    ..default()
+                },
+                background_color: BackgroundColor(Color::srgba(0.02, 0.04, 0.07, 0.75)),
+                ..default()
+            },
+            SavePlanetDialogRoot,
+        ))
+        .id();
+
+    commands.entity(root).with_children(|parent| {
+        parent
+            .spawn(NodeBundle {
+                style: Style {
+                    flex_direction: FlexDirection::Column,
+                    padding: UiRect::all(Val::Px(16.0)),
+                    row_gap: Val::Px(12.0),
+                    align_items: AlignItems::Stretch,
+                    min_width: Val::Px(320.0),
+                    max_width: Val::Px(360.0),
+                    ..default()
+                },
+                background_color: BackgroundColor(Color::srgba(0.1, 0.12, 0.18, 0.96)),
+                border_color: BorderColor(Color::srgba(0.25, 0.3, 0.4, 0.9)),
+                ..default()
+            })
+            .with_children(|panel| {
+                panel.spawn(TextBundle::from_section(
+                    "Save Planet",
+                    TextStyle {
+                        font_size: 20.0,
+                        color: Color::srgb(0.9, 0.94, 1.0),
+                        ..default()
+                    },
+                ));
+
+                panel.spawn(TextBundle::from_section(
+                    format!("Planet name: {}", DEFAULT_WORLD_NAME),
+                    TextStyle {
+                        font_size: 14.0,
+                        color: Color::srgb(0.82, 0.86, 0.95),
+                        ..default()
+                    },
+                ));
+
+                panel.spawn(TextBundle::from_section(
+                    "This will write the current configuration and metadata to assets/worlds/Alpha.",
+                    TextStyle {
+                        font_size: 12.0,
+                        color: Color::srgb(0.7, 0.74, 0.86),
+                        ..default()
+                    },
+                ));
+
+                panel
+                    .spawn(NodeBundle {
+                        style: Style {
+                            flex_direction: FlexDirection::Row,
+                            column_gap: Val::Px(12.0),
+                            justify_content: JustifyContent::FlexEnd,
+                            ..default()
+                        },
+                        ..default()
+                    })
+                    .with_children(|buttons| {
+                        buttons
+                            .spawn(ButtonBundle {
+                                style: Style {
+                                    width: Val::Px(80.0),
+                                    height: Val::Px(28.0),
+                                    justify_content: JustifyContent::Center,
+                                    align_items: AlignItems::Center,
+                                    ..default()
+                                },
+                                background_color: BackgroundColor(Color::srgba(0.45, 0.2, 0.2, 0.95)),
+                                ..default()
+                            })
+                            .insert(SavePlanetDialogCancel)
+                            .with_children(|b| {
+                                b.spawn(TextBundle::from_section(
+                                    "Cancel",
+                                    TextStyle {
+                                        font_size: 14.0,
+                                        color: Color::srgb(0.95, 0.9, 0.9),
+                                        ..default()
+                                    },
+                                ));
+                            });
+
+                        buttons
+                            .spawn(ButtonBundle {
+                                style: Style {
+                                    width: Val::Px(96.0),
+                                    height: Val::Px(28.0),
+                                    justify_content: JustifyContent::Center,
+                                    align_items: AlignItems::Center,
+                                    ..default()
+                                },
+                                background_color: BackgroundColor(Color::srgba(0.16, 0.38, 0.25, 0.95)),
+                                ..default()
+                            })
+                            .insert(SavePlanetDialogSave)
+                            .with_children(|b| {
+                                b.spawn(TextBundle::from_section(
+                                    "Save",
+                                    TextStyle {
+                                        font_size: 14.0,
+                                        color: Color::srgb(0.9, 0.98, 0.93),
+                                        ..default()
+                                    },
+                                ));
+                            });
+                    });
+            });
+    });
+
+    root
+}
+
+fn handle_save_planet_dialog(
+    materials: Res<ButtonMaterials>,
+    mut query: ParamSet<(
+        Query<
+            (&Interaction, &mut BackgroundColor),
+            (Changed<Interaction>, With<SavePlanetDialogCancel>),
+        >,
+        Query<
+            (&Interaction, &mut BackgroundColor),
+            (Changed<Interaction>, With<SavePlanetDialogSave>),
+        >,
+    )>,
+    mut dialog_state: ResMut<SavePlanetDialogState>,
+    state: Res<WorldBuilderState>,
+    mut commands: Commands,
+) {
+    for (interaction, mut color) in query.p0().iter_mut() {
+        match *interaction {
+            Interaction::Pressed => {
+                *color = materials.pressed;
+                close_save_planet_dialog(&mut dialog_state, &mut commands);
+            }
+            Interaction::Hovered => *color = materials.hovered,
+            Interaction::None => *color = materials.normal,
+        }
+    }
+
+    for (interaction, mut color) in query.p1().iter_mut() {
+        match *interaction {
+            Interaction::Pressed => {
+                *color = materials.pressed;
+                match save_planet_package_files(DEFAULT_WORLD_NAME, &state.working) {
+                    Ok(path) => info!("Saved planet package to {:?}", path),
+                    Err(err) => warn!("Failed to save planet package: {}", err),
+                }
+                close_save_planet_dialog(&mut dialog_state, &mut commands);
+            }
+            Interaction::Hovered => *color = materials.hovered,
+            Interaction::None => *color = materials.normal,
+        }
+    }
+}
+
+fn close_save_planet_dialog(dialog_state: &mut SavePlanetDialogState, commands: &mut Commands) {
+    if let Some(entity) = dialog_state.root.take() {
+        commands.entity(entity).despawn_recursive();
     }
 }
 

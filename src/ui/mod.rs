@@ -1,6 +1,7 @@
 mod crosshair;
 mod debug_overlay;
 mod loading_screen;
+mod minimap;
 // mod console_commands;  // Disabled - conflicts with command_prompt
 pub mod command_prompt; // Made public so other modules can access CommandPromptState
 
@@ -10,6 +11,7 @@ use loading_screen::LoadingScreenPlugin;
 // use console_commands::ConsoleCommandsPlugin;  // Disabled - using CommandPromptPlugin instead
 use crate::loading::GameState;
 use command_prompt::CommandPromptPlugin;
+use minimap::MiniMapPlugin;
 
 pub struct UIPlugin;
 
@@ -19,6 +21,7 @@ impl Plugin for UIPlugin {
             .add_plugins(DebugOverlayPlugin)
             // .add_plugins(ConsoleCommandsPlugin)  // Disabled - conflicts with CommandPromptPlugin
             .add_plugins(CommandPromptPlugin) // Use custom command prompt instead
+            .add_plugins(MiniMapPlugin)
             .add_systems(OnEnter(GameState::Playing), crosshair::setup_crosshair);
     }
 }

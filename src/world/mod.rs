@@ -4,6 +4,7 @@ pub mod config;
 pub mod defaults;
 pub mod generator;
 pub mod metadata;
+pub mod package;
 pub mod persistence;
 
 pub use biome::Biome;

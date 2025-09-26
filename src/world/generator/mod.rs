@@ -18,6 +18,7 @@ use crate::camera::PlayerCamera;
 use crate::chunk::{ChunkPos, CHUNK_SIZE_F32};
 use crate::loading::GameState;
 use crate::planet::PlanetConfig;
+use crate::world::package::planet_package_paths;
 
 mod continents;
 mod hydrology;
@@ -449,196 +450,33 @@ impl Plugin for WorldPlugin {
 }
 
 fn setup_world_generator(mut commands: Commands, planet_config: Res<PlanetConfig>) {
-    let desired_config = WorldGenConfig::from_planet_config(&planet_config);
+    let world_name = planet_config.name.clone();
+    let (config_path, metadata_path) = planet_package_paths(&world_name);
 
-    let metadata_env = std::env::var("FORGE_WORLD_METADATA_PATH")
-        .ok()
-        .filter(|value| !value.trim().is_empty());
-    let metadata_path = metadata_env
-        .as_ref()
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("target/world_metadata.bin"));
-    let save_metadata = std::env::var("FORGE_WORLD_METADATA_SAVE")
-        .map(|value| !matches!(value.trim(), "0" | "false" | "False" | "FALSE"))
-        .unwrap_or(true);
-
-    let candidate_paths: Vec<PathBuf> = if metadata_env.is_some() {
-        vec![metadata_path.clone()]
-    } else {
-        let mut paths = vec![metadata_path.clone()];
-        for extension in ["json", "json.gz"] {
-            let candidate = metadata_path.with_extension(extension);
-            if candidate != metadata_path && !paths.contains(&candidate) {
-                paths.push(candidate);
-            }
-        }
-        paths
-    };
-
-    let metadata_load_path = candidate_paths
-        .iter()
-        .find(|candidate| candidate.exists())
-        .cloned();
-
-    match &metadata_load_path {
-        Some(path) if path == &metadata_path => {
-            info!("Attempting to load world metadata from {:?}", path);
-            println!("[world] attempting to load metadata from {:?}", path);
-        }
-        Some(path) => {
-            info!(
-                "Attempting to load world metadata from legacy path {:?} (target path {:?})",
-                path, metadata_path
-            );
-            println!(
-                "[world] attempting to load metadata from legacy {:?} (target {:?})",
-                path, metadata_path
-            );
-        }
-        None => {
-            info!(
-                "No cached world metadata found at {:?}, generating new world",
-                metadata_path
-            );
-            println!(
-                "[world] no metadata at {:?}, starting fresh generation",
-                metadata_path
-            );
-        }
-    };
-
-    let mut metadata_loaded = false;
-    let mut metadata_format = WorldMetadataFormat::Binary;
-    let mut metadata_source_path: Option<PathBuf> = None;
-
-    let world_gen = if let Some(path) = metadata_load_path.clone() {
-        match WorldMetadata::load_from_file(&path) {
-            Ok((metadata, format)) => {
-                if metadata.config == desired_config {
-                    metadata_loaded = true;
-                    metadata_format = format;
-                    metadata_source_path = Some(path.clone());
-                    info!(
-                        "Loaded cached world metadata from {:?} using {:?} format",
-                        path, format
-                    );
-                    println!(
-                        "[world] loaded metadata from {:?} (format: {:?})",
-                        path, format
-                    );
-                    WorldGenerator::from_metadata(metadata)
-                } else {
-                    warn!(
-                        "Metadata {:?} config mismatch (cached planet_size={} seed={} vs desired planet_size={} seed={}); regenerating world.",
-                        path,
-                        metadata.config.planet_size,
-                        metadata.config.seed,
-                        desired_config.planet_size,
-                        desired_config.seed
-                    );
-                    info!("World generation (cached mismatch) starting...");
-                    println!("[world] regenerate due to metadata mismatch");
-                    let generator =
-                        WorldGenerator::with_progress(desired_config.clone(), NoopProgress);
-                    info!("World generation complete (cached mismatch).");
-                    println!("[world] regeneration complete (mismatch)");
-                    generator
-                }
-            }
-            Err(error) => {
-                warn!(
-                    "Failed to load metadata from {:?}: {}. Regenerating world.",
-                    path, error
-                );
-                info!("World generation (metadata load failed) starting...");
-                println!("[world] regenerate due to metadata load failure: {}", error);
-                let generator = WorldGenerator::with_progress(desired_config.clone(), NoopProgress);
-                info!("World generation complete (metadata load failed).");
-                println!("[world] regeneration complete (load failure)");
-                generator
-            }
-        }
-    } else {
-        info!("World generation (no metadata) starting...");
-        println!("[world] generating new world (no metadata)");
-        let generator = WorldGenerator::with_progress(desired_config.clone(), NoopProgress);
-        info!("World generation complete (no metadata).");
-        println!("[world] generation complete (no metadata)");
-        generator
-    };
-
-    let source_path_matches_target = metadata_source_path
-        .as_ref()
-        .map(|path| path == &metadata_path)
-        .unwrap_or(false);
-    let needs_upgrade = metadata_loaded && metadata_format != WorldMetadataFormat::Binary;
-
-    if metadata_loaded {
-        let source_path_for_log: &Path = metadata_source_path
-            .as_deref()
-            .unwrap_or(metadata_path.as_path());
-        if save_metadata && (needs_upgrade || !source_path_matches_target) {
-            if let Err(error) = world_gen.metadata().save_to_file(&metadata_path) {
-                warn!(
-                    "Failed to write upgraded world metadata to {:?}: {}",
-                    metadata_path, error
-                );
-            } else {
-                let upgrade_description = match (needs_upgrade, source_path_matches_target) {
-                    (true, true) => "format",
-                    (true, false) => "format and path",
-                    (false, false) => "path",
-                    (false, true) => "",
-                };
-                info!(
-                    "Saved world metadata to {:?} (upgraded {} from {:?}, format {:?} -> Binary)",
-                    metadata_path, upgrade_description, source_path_for_log, metadata_format
-                );
-                println!(
-                    "[world] saved metadata to {:?} (upgraded {} from {:?}, format {:?} -> Binary)",
-                    metadata_path, upgrade_description, source_path_for_log, metadata_format
-                );
-            }
-        } else {
-            info!(
-                "Using cached world metadata from {:?}; {}",
-                source_path_for_log,
-                if save_metadata {
-                    "already binary and in-place"
-                } else {
-                    "autosave disabled"
-                }
-            );
-            println!(
-                "[world] using cached metadata from {:?}; {}",
-                source_path_for_log,
-                if save_metadata {
-                    "already binary and in-place"
-                } else {
-                    "autosave disabled"
-                }
-            );
-        }
-    } else if save_metadata {
-        if let Err(error) = world_gen.metadata().save_to_file(&metadata_path) {
-            warn!(
-                "Failed to write world metadata to {:?}: {}",
-                metadata_path, error
-            );
-        } else {
-            info!("Saved world metadata to {:?}", metadata_path);
-            println!("[world] saved metadata to {:?}", metadata_path);
-        }
-    } else {
-        info!(
-            "World metadata autosave disabled; skipping write to {:?}",
-            metadata_path
-        );
-        println!(
-            "[world] metadata autosave disabled; skipping write to {:?}",
+    if !metadata_path.exists() {
+        panic!(
+            "Planet metadata {:?} not found. Please run the world builder and save the planet first.",
             metadata_path
         );
     }
+
+    let world_gen = match WorldMetadata::load_from_file(&metadata_path) {
+        Ok((metadata, format)) => {
+            info!(
+                "Loaded cached world metadata from {:?} using {:?} format",
+                metadata_path, format
+            );
+            println!(
+                "[world] loaded metadata from {:?} (format: {:?})",
+                metadata_path, format
+            );
+            WorldGenerator::from_metadata(metadata)
+        }
+        Err(error) => panic!(
+            "Failed to load metadata from {:?}: {}. Ensure the planet package is valid.",
+            metadata_path, error
+        ),
+    };
 
     if let Ok(env_value) = std::env::var("FORGE_EXPORT_WORLD_MAP") {
         let output_path: PathBuf = if env_value.trim().is_empty() {
@@ -664,6 +502,32 @@ fn setup_world_generator(mut commands: Commands, planet_config: Res<PlanetConfig
                 output_path, error
             ),
         }
+    }
+
+    if let Ok(config_contents) = fs::read_to_string(&config_path) {
+        match serde_json::from_str::<WorldGenConfig>(&config_contents) {
+            Ok(saved_config) => {
+                let metadata_config = world_gen.config();
+                if saved_config != *metadata_config {
+                    warn!(
+                        "World metadata config differs from planet.json (seed {} vs {}, size {} vs {}). Run the world builder 'Save' flow to regenerate metadata.",
+                        saved_config.seed,
+                        metadata_config.seed,
+                        saved_config.planet_size,
+                        metadata_config.planet_size
+                    );
+                }
+            }
+            Err(err) => warn!(
+                "Failed to parse planet config {:?}: {}. Metadata will be used as-is.",
+                config_path, err
+            ),
+        }
+    } else {
+        warn!(
+            "Planet config {:?} not found while loading metadata. Metadata will be used as-is.",
+            config_path
+        );
     }
 
     commands.insert_resource(world_gen);

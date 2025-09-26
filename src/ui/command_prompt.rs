@@ -127,6 +127,7 @@ pub struct PlayerPermissions {
 #[derive(Resource, Default)]
 pub struct CommandPromptState {
     pub is_open: bool,
+    pub suppress_next_key: Option<KeyCode>,
 }
 
 impl Default for PlayerPermissions {
@@ -576,8 +577,12 @@ pub fn toggle_command_prompt(
 
             // Clear buffer and set initial content
             prompt.input_buffer.clear();
+            state.suppress_next_key = None;
             if should_open_with_slash {
                 prompt.input_buffer.push('/');
+                state.suppress_next_key = Some(KeyCode::Slash);
+            } else if should_open_for_chat {
+                state.suppress_next_key = Some(KeyCode::KeyT);
             }
             // For 't' key, we start with empty buffer (chat mode)
 
@@ -616,6 +621,13 @@ pub fn handle_command_input(
         for event in events.read() {
             if !event.state.is_pressed() {
                 continue;
+            }
+
+            if let Some(suppressed) = state.suppress_next_key {
+                if event.key_code == suppressed {
+                    state.suppress_next_key = None;
+                    continue;
+                }
             }
 
             let key_code = event.key_code;
@@ -845,6 +857,7 @@ pub fn handle_command_input(
 
     if should_close {
         state.is_open = false;
+        state.suppress_next_key = None;
 
         // Hide cursor and update window when closing
         if let Ok(mut visibility) = visibility_query.get_single_mut() {

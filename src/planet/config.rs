@@ -65,7 +65,7 @@ impl Default for PlanetConfig {
             size_chunks: PLANET_SIZE_CHUNKS,
             height_chunks: PLANET_HEIGHT_CHUNKS,
             seed: 12345,
-            name: "Terra".to_string(),
+            name: "Alpha".to_string(),
             sea_level: SEA_LEVEL,
         }
     }
