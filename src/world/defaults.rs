@@ -30,22 +30,22 @@ pub mod terrain {
     pub const HIGHLAND_BONUS: f32 = 20_f32;
 }
 pub mod mountain {
-    pub const MOUNTAIN_FREQUENCY: f64 = 2.5;
-    pub const MOUNTAIN_HEIGHT: f32 = 160_f32;
+    pub const MOUNTAIN_FREQUENCY: f64 = 2.6;
+    pub const MOUNTAIN_HEIGHT: f32 = 260_f32;
     pub const MOUNTAIN_THRESHOLD: f32 = 0.48;
-    pub const MOUNTAIN_RANGE_COUNT: u32 = 14_u32;
-    pub const MOUNTAIN_RANGE_WIDTH: f32 = 300.0;
-    pub const MOUNTAIN_RANGE_STRENGTH: f32 = 2.2;
-    pub const MOUNTAIN_RANGE_SPUR_CHANCE: f32 = 0.45_f32;
-    pub const MOUNTAIN_RANGE_SPUR_STRENGTH: f32 = 1.5;
-    pub const MOUNTAIN_RANGE_ROUGHNESS: f32 = 1.6999996_f32;
-    pub const MOUNTAIN_EROSION_ITERATIONS: u32 = 3;
-    pub const MOUNTAIN_CONVERGENCE_BOOST: f32 = 0.65;
-    pub const MOUNTAIN_DIVERGENCE_PENALTY: f32 = 0.4;
-    pub const MOUNTAIN_SHEAR_BOOST: f32 = 0.12;
-    pub const MOUNTAIN_ARC_THRESHOLD: f32 = 0.25;
-    pub const MOUNTAIN_ARC_STRENGTH: f32 = 0.4;
-    pub const MOUNTAIN_ARC_WIDTH_FACTOR: f32 = 0.45;
+    pub const MOUNTAIN_RANGE_COUNT: u32 = 18_u32;
+    pub const MOUNTAIN_RANGE_WIDTH: f32 = 420.0;
+    pub const MOUNTAIN_RANGE_STRENGTH: f32 = 2.6;
+    pub const MOUNTAIN_RANGE_SPUR_CHANCE: f32 = 0.55_f32;
+    pub const MOUNTAIN_RANGE_SPUR_STRENGTH: f32 = 1.8;
+    pub const MOUNTAIN_RANGE_ROUGHNESS: f32 = 1.9_f32;
+    pub const MOUNTAIN_EROSION_ITERATIONS: u32 = 4;
+    pub const MOUNTAIN_CONVERGENCE_BOOST: f32 = 0.75;
+    pub const MOUNTAIN_DIVERGENCE_PENALTY: f32 = 0.45;
+    pub const MOUNTAIN_SHEAR_BOOST: f32 = 0.14;
+    pub const MOUNTAIN_ARC_THRESHOLD: f32 = 0.23;
+    pub const MOUNTAIN_ARC_STRENGTH: f32 = 0.45;
+    pub const MOUNTAIN_ARC_WIDTH_FACTOR: f32 = 0.5;
 }
 pub mod climate {
     pub const MOISTURE_FREQUENCY: f64 = 2.6;
@@ -67,19 +67,19 @@ pub mod hydrology {
     pub const HYDROLOGY_RAINFALL_FREQUENCY: f64 = 0.74_f64;
     pub const HYDROLOGY_RAINFALL_CONTRAST: f32 = 1.6_f32;
     pub const HYDROLOGY_RAINFALL_DRY_FACTOR: f32 = 0.08_f32;
-    pub const HYDROLOGY_ITERATIONS: u32 = 72_u32;
-    pub const HYDROLOGY_TIME_STEP: f32 = 0.32_f32;
-    pub const HYDROLOGY_INFILTRATION_RATE: f32 = 0.52_f32;
-    pub const HYDROLOGY_BASEFLOW: f32 = 0.006_f32;
-    pub const HYDROLOGY_EROSION_RATE: f32 = 0.15_f32;
-    pub const HYDROLOGY_DEPOSITION_RATE: f32 = 0.32_f32;
-    pub const HYDROLOGY_SEDIMENT_CAPACITY: f32 = 0.5_f32;
-    pub const HYDROLOGY_BANKFULL_DEPTH: f32 = 14.0_f32;
-    pub const HYDROLOGY_FLOODPLAIN_SOFTENING: f32 = 6.0_f32;
-    pub const HYDROLOGY_MINIMUM_SLOPE: f32 = 0.0005_f32;
-    pub const HYDROLOGY_SHORELINE_RADIUS: f32 = 96.0_f32;
-    pub const HYDROLOGY_SHORELINE_MAX_HEIGHT: f32 = 18.0_f32;
-    pub const HYDROLOGY_SHORELINE_SMOOTHING: u32 = 2_u32;
+    pub const HYDROLOGY_RIVER_DENSITY: f32 = 0.12_f32;
+    pub const HYDROLOGY_RIVER_WIDTH_SCALE: f32 = 1.0_f32;
+    pub const HYDROLOGY_RIVER_DEPTH_SCALE: f32 = 12.0_f32;
+    pub const HYDROLOGY_MEANDER_STRENGTH: f32 = 0.6_f32;
+    pub const HYDROLOGY_POND_DENSITY: f32 = 0.35_f32;
+    pub const HYDROLOGY_POND_MIN_RADIUS: f32 = 6.0_f32;
+    pub const HYDROLOGY_POND_MAX_RADIUS: f32 = 18.0_f32;
+    pub const HYDROLOGY_ESTUARY_LENGTH: f32 = 420.0_f32;
+    pub const HYDROLOGY_FLOODPLAIN_RADIUS: f32 = 32.0_f32;
+    pub const HYDROLOGY_COASTAL_BLEND: f32 = 0.7_f32;
+    pub const HYDROLOGY_MAJOR_RIVER_COUNT: u32 = 24;
+    pub const HYDROLOGY_MAJOR_RIVER_MIN_FLOW: f32 = 0.015_f32;
+    pub const HYDROLOGY_MAJOR_RIVER_DEPTH_BOOST: f32 = 1.8_f32;
 }
 pub use climate::*;
 pub use continent::*;

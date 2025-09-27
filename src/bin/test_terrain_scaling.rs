@@ -47,12 +47,18 @@ fn main() {
         );
         println!("  Island frequency: {:.3}", world_config.island_frequency);
         println!(
-            "  Hydrology iterations: {}",
-            world_config.hydrology_iterations
+            "  Hydrology river density: {:.2}",
+            world_config.hydrology_river_density
         );
         println!(
-            "  Hydrology erosion rate: {:.2}",
-            world_config.hydrology_erosion_rate
+            "  Hydrology river depth scale: {:.1}",
+            world_config.hydrology_river_depth_scale
+        );
+        println!(
+            "  Hydrology major rivers: {} (min flow {:.2}, depth boost {:.2})",
+            world_config.hydrology_major_river_count,
+            world_config.hydrology_major_river_min_flow,
+            world_config.hydrology_major_river_depth_boost
         );
 
         println!("\nScale-Invariant Features (should be constant):");

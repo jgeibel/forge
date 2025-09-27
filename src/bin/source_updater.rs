@@ -25,8 +25,7 @@ pub fn detect_changes(working: &WorldGenConfig, defaults: &WorldGenConfig) -> Ve
                     | "continent_count"
                     | "mountain_range_count"
                     | "hydrology_resolution"
-                    | "hydrology_iterations"
-                    | "hydrology_shoreline_smoothing" => format!("{}", working.$field),
+                    | "hydrology_major_river_count" => format!("{}", working.$field),
                     // f64 fields
                     "continent_frequency"
                     | "detail_frequency"
@@ -92,28 +91,16 @@ pub fn detect_changes(working: &WorldGenConfig, defaults: &WorldGenConfig) -> Ve
         hydrology_rainfall_dry_factor,
         "HYDROLOGY_RAINFALL_DRY_FACTOR"
     );
-    check_field!(hydrology_iterations, "HYDROLOGY_ITERATIONS");
-    check_field!(hydrology_time_step, "HYDROLOGY_TIME_STEP");
-    check_field!(hydrology_infiltration_rate, "HYDROLOGY_INFILTRATION_RATE");
-    check_field!(hydrology_baseflow, "HYDROLOGY_BASEFLOW");
-    check_field!(hydrology_erosion_rate, "HYDROLOGY_EROSION_RATE");
-    check_field!(hydrology_deposition_rate, "HYDROLOGY_DEPOSITION_RATE");
-    check_field!(hydrology_sediment_capacity, "HYDROLOGY_SEDIMENT_CAPACITY");
-    check_field!(hydrology_bankfull_depth, "HYDROLOGY_BANKFULL_DEPTH");
-    check_field!(
-        hydrology_floodplain_softening,
-        "HYDROLOGY_FLOODPLAIN_SOFTENING"
-    );
-    check_field!(hydrology_minimum_slope, "HYDROLOGY_MINIMUM_SLOPE");
-    check_field!(hydrology_shoreline_radius, "HYDROLOGY_SHORELINE_RADIUS");
-    check_field!(
-        hydrology_shoreline_max_height,
-        "HYDROLOGY_SHORELINE_MAX_HEIGHT"
-    );
-    check_field!(
-        hydrology_shoreline_smoothing,
-        "HYDROLOGY_SHORELINE_SMOOTHING"
-    );
+    check_field!(hydrology_river_density, "HYDROLOGY_RIVER_DENSITY");
+    check_field!(hydrology_river_width_scale, "HYDROLOGY_RIVER_WIDTH_SCALE");
+    check_field!(hydrology_river_depth_scale, "HYDROLOGY_RIVER_DEPTH_SCALE");
+    check_field!(hydrology_meander_strength, "HYDROLOGY_MEANDER_STRENGTH");
+    check_field!(hydrology_pond_density, "HYDROLOGY_POND_DENSITY");
+    check_field!(hydrology_pond_min_radius, "HYDROLOGY_POND_MIN_RADIUS");
+    check_field!(hydrology_pond_max_radius, "HYDROLOGY_POND_MAX_RADIUS");
+    check_field!(hydrology_estuary_length, "HYDROLOGY_ESTUARY_LENGTH");
+    check_field!(hydrology_floodplain_radius, "HYDROLOGY_FLOODPLAIN_RADIUS");
+    check_field!(hydrology_coastal_blend, "HYDROLOGY_COASTAL_BLEND");
 
     changes
 }

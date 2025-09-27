@@ -9,7 +9,7 @@ pub struct HydrologyDebugSample {
     pub channel_depth: f32,
     pub water_level: f32,
     pub river_intensity: f32,
-    pub lake_intensity: f32,
+    pub pond_intensity: f32,
     pub coastal_factor: f32,
 }
 
@@ -175,20 +175,21 @@ impl WorldGenerator {
     pub fn get_height(&self, world_x: f32, world_z: f32) -> f32 {
         let components = self.terrain_components(world_x, world_z);
         let hydro = self.sample_hydrology(world_x, world_z, components.base_height);
+        let floodplain = self.config.hydrology_floodplain_radius.max(0.0);
         let mut height = components.base_height - hydro.channel_depth;
-        if hydro.lake_intensity > 0.05 {
-            let soften = self.config.hydrology_floodplain_softening.max(0.0);
+        if hydro.pond_intensity > 0.05 {
+            let soften = (floodplain * 0.1).clamp(0.0, 6.0);
             let shore_level = (hydro.water_level - soften).min(height);
             height = height.min(shore_level);
         } else if hydro.river_intensity > 0.05 {
-            let soften = self.config.hydrology_floodplain_softening.max(0.0);
+            let soften = (floodplain * 0.2).clamp(0.5, 12.0);
             let blend = soften * (1.0 - hydro.river_intensity).clamp(0.0, 1.0);
             height = height.min(hydro.water_level - blend);
         }
 
         if hydro.coastal_factor > 0.01 {
-            let blend_strength = hydro.coastal_factor.powf(0.8);
-            let max_elevation = self.config.hydrology_shoreline_max_height.max(0.0);
+            let blend_strength = hydro.coastal_factor.clamp(0.0, 1.0);
+            let max_elevation = (self.config.hydrology_estuary_length * 0.05).clamp(4.0, 18.0);
             let relative = height - self.config.sea_level;
             let clamped = relative.clamp(-max_elevation, max_elevation);
             let target = self.config.sea_level + clamped;
@@ -276,13 +277,13 @@ impl WorldGenerator {
             sample.channel_depth = 0.0;
             sample.water_level = self.config.sea_level;
             sample.river_intensity = 0.0;
-            sample.lake_intensity = 0.0;
+            sample.pond_intensity = 0.0;
             sample.coastal_factor = 0.0;
             return sample;
         }
 
         if sample.channel_depth > 0.0 {
-            let bankfull_cap = (self.config.hydrology_bankfull_depth * 2.5).max(4.0);
+            let bankfull_cap = (self.config.hydrology_river_depth_scale * 2.0).max(3.0);
             let max_carve = (base_height - 4.0).max(0.0).min(bankfull_cap);
             sample.channel_depth = sample.channel_depth.min(max_carve);
         }
@@ -306,7 +307,7 @@ impl WorldGenerator {
             channel_depth: sample.channel_depth,
             water_level: sample.water_level,
             river_intensity: sample.river_intensity,
-            lake_intensity: sample.lake_intensity,
+            pond_intensity: sample.pond_intensity,
             coastal_factor: sample.coastal_factor,
         }
     }

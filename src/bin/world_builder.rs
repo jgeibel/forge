@@ -380,19 +380,9 @@ enum ParameterField {
     HydrologyRainfallFrequency,
     HydrologyRainfallContrast,
     HydrologyRainfallDryFactor,
-    HydrologyIterations,
-    HydrologyTimeStep,
-    HydrologyInfiltrationRate,
-    HydrologyBaseflow,
-    HydrologyErosionRate,
-    HydrologyDepositionRate,
-    HydrologySedimentCapacity,
-    HydrologyBankfullDepth,
-    HydrologyFloodplainSoftening,
-    HydrologyMinimumSlope,
-    HydrologyShorelineRadius,
-    HydrologyShorelineMaxHeight,
-    HydrologyShorelineSmoothing,
+    HydrologyMajorRiverCount,
+    HydrologyMajorRiverMinFlow,
+    HydrologyMajorRiverDepthBoost,
 }
 
 impl ParameterField {
@@ -450,19 +440,9 @@ impl ParameterField {
             ParameterField::HydrologyRainfallFrequency => "Rainfall Frequency",
             ParameterField::HydrologyRainfallContrast => "Rainfall Contrast",
             ParameterField::HydrologyRainfallDryFactor => "Rainfall Dry Floor",
-            ParameterField::HydrologyIterations => "Iterations",
-            ParameterField::HydrologyTimeStep => "Time Step",
-            ParameterField::HydrologyInfiltrationRate => "Infiltration",
-            ParameterField::HydrologyBaseflow => "Baseflow",
-            ParameterField::HydrologyErosionRate => "Erosion Rate",
-            ParameterField::HydrologyDepositionRate => "Deposition Rate",
-            ParameterField::HydrologySedimentCapacity => "Sediment Capacity",
-            ParameterField::HydrologyBankfullDepth => "Bankfull Depth",
-            ParameterField::HydrologyFloodplainSoftening => "Floodplain Softening",
-            ParameterField::HydrologyMinimumSlope => "Minimum Slope",
-            ParameterField::HydrologyShorelineRadius => "Shoreline Radius",
-            ParameterField::HydrologyShorelineMaxHeight => "Shoreline Max Height",
-            ParameterField::HydrologyShorelineSmoothing => "Shoreline Smoothing",
+            ParameterField::HydrologyMajorRiverCount => "Major Rivers",
+            ParameterField::HydrologyMajorRiverMinFlow => "Major Flow Threshold",
+            ParameterField::HydrologyMajorRiverDepthBoost => "Major Depth Boost",
         }
     }
 
@@ -660,59 +640,18 @@ impl ParameterField {
                 config.hydrology_rainfall_dry_factor =
                     (config.hydrology_rainfall_dry_factor + delta * 0.05).clamp(0.0, 0.8);
             }
-            ParameterField::HydrologyIterations => {
-                let step = (delta.round() as i32).clamp(-40, 40);
-                let updated = (config.hydrology_iterations as i32 + step).clamp(1, 512);
-                config.hydrology_iterations = updated as u32;
+            ParameterField::HydrologyMajorRiverCount => {
+                let updated =
+                    (config.hydrology_major_river_count as i32 + delta.round() as i32).clamp(0, 32);
+                config.hydrology_major_river_count = updated as u32;
             }
-            ParameterField::HydrologyTimeStep => {
-                config.hydrology_time_step =
-                    (config.hydrology_time_step + delta * 0.05).clamp(0.01, 5.0);
+            ParameterField::HydrologyMajorRiverMinFlow => {
+                config.hydrology_major_river_min_flow =
+                    (config.hydrology_major_river_min_flow + delta * 0.02).clamp(0.0, 0.5);
             }
-            ParameterField::HydrologyInfiltrationRate => {
-                config.hydrology_infiltration_rate =
-                    (config.hydrology_infiltration_rate + delta * 0.02).clamp(0.0, 0.9);
-            }
-            ParameterField::HydrologyBaseflow => {
-                config.hydrology_baseflow =
-                    (config.hydrology_baseflow + delta * 0.01).clamp(0.0, 0.3);
-            }
-            ParameterField::HydrologyErosionRate => {
-                config.hydrology_erosion_rate =
-                    (config.hydrology_erosion_rate + delta * 0.02).clamp(0.01, 2.0);
-            }
-            ParameterField::HydrologyDepositionRate => {
-                config.hydrology_deposition_rate =
-                    (config.hydrology_deposition_rate + delta * 0.02).clamp(0.01, 2.0);
-            }
-            ParameterField::HydrologySedimentCapacity => {
-                config.hydrology_sediment_capacity =
-                    (config.hydrology_sediment_capacity + delta * 0.02).clamp(0.05, 2.0);
-            }
-            ParameterField::HydrologyBankfullDepth => {
-                config.hydrology_bankfull_depth =
-                    (config.hydrology_bankfull_depth + delta).clamp(2.0, 80.0);
-            }
-            ParameterField::HydrologyFloodplainSoftening => {
-                config.hydrology_floodplain_softening =
-                    (config.hydrology_floodplain_softening + delta).clamp(0.0, 40.0);
-            }
-            ParameterField::HydrologyMinimumSlope => {
-                config.hydrology_minimum_slope =
-                    (config.hydrology_minimum_slope + delta * 0.0001).clamp(0.0001, 0.05);
-            }
-            ParameterField::HydrologyShorelineRadius => {
-                config.hydrology_shoreline_radius =
-                    (config.hydrology_shoreline_radius + delta * 8.0).clamp(16.0, 512.0);
-            }
-            ParameterField::HydrologyShorelineMaxHeight => {
-                config.hydrology_shoreline_max_height =
-                    (config.hydrology_shoreline_max_height + delta).clamp(0.0, 80.0);
-            }
-            ParameterField::HydrologyShorelineSmoothing => {
-                let updated = (config.hydrology_shoreline_smoothing as i32 + delta.round() as i32)
-                    .clamp(0, 8);
-                config.hydrology_shoreline_smoothing = updated as u32;
+            ParameterField::HydrologyMajorRiverDepthBoost => {
+                config.hydrology_major_river_depth_boost =
+                    (config.hydrology_major_river_depth_boost + delta * 0.1).clamp(0.1, 2.5);
             }
         }
     }
@@ -775,24 +714,12 @@ impl ParameterField {
             ParameterField::HydrologyRainfallDryFactor => {
                 config.hydrology_rainfall_dry_factor as f64
             }
-            ParameterField::HydrologyIterations => config.hydrology_iterations as f64,
-            ParameterField::HydrologyTimeStep => config.hydrology_time_step as f64,
-            ParameterField::HydrologyInfiltrationRate => config.hydrology_infiltration_rate as f64,
-            ParameterField::HydrologyBaseflow => config.hydrology_baseflow as f64,
-            ParameterField::HydrologyErosionRate => config.hydrology_erosion_rate as f64,
-            ParameterField::HydrologyDepositionRate => config.hydrology_deposition_rate as f64,
-            ParameterField::HydrologySedimentCapacity => config.hydrology_sediment_capacity as f64,
-            ParameterField::HydrologyBankfullDepth => config.hydrology_bankfull_depth as f64,
-            ParameterField::HydrologyFloodplainSoftening => {
-                config.hydrology_floodplain_softening as f64
+            ParameterField::HydrologyMajorRiverCount => config.hydrology_major_river_count as f64,
+            ParameterField::HydrologyMajorRiverMinFlow => {
+                config.hydrology_major_river_min_flow as f64
             }
-            ParameterField::HydrologyMinimumSlope => config.hydrology_minimum_slope as f64,
-            ParameterField::HydrologyShorelineRadius => config.hydrology_shoreline_radius as f64,
-            ParameterField::HydrologyShorelineMaxHeight => {
-                config.hydrology_shoreline_max_height as f64
-            }
-            ParameterField::HydrologyShorelineSmoothing => {
-                config.hydrology_shoreline_smoothing as f64
+            ParameterField::HydrologyMajorRiverDepthBoost => {
+                config.hydrology_major_river_depth_boost as f64
             }
         }
     }
@@ -893,44 +820,14 @@ impl ParameterField {
             ParameterField::HydrologyRainfallDryFactor => {
                 format!("{:.2}", config.hydrology_rainfall_dry_factor)
             }
-            ParameterField::HydrologyIterations => {
-                format!("{}", config.hydrology_iterations)
+            ParameterField::HydrologyMajorRiverCount => {
+                format!("{}", config.hydrology_major_river_count)
             }
-            ParameterField::HydrologyTimeStep => {
-                format!("{:.2}", config.hydrology_time_step)
+            ParameterField::HydrologyMajorRiverMinFlow => {
+                format!("{:.2}", config.hydrology_major_river_min_flow)
             }
-            ParameterField::HydrologyInfiltrationRate => {
-                format!("{:.3}", config.hydrology_infiltration_rate)
-            }
-            ParameterField::HydrologyBaseflow => {
-                format!("{:.3}", config.hydrology_baseflow)
-            }
-            ParameterField::HydrologyErosionRate => {
-                format!("{:.3}", config.hydrology_erosion_rate)
-            }
-            ParameterField::HydrologyDepositionRate => {
-                format!("{:.3}", config.hydrology_deposition_rate)
-            }
-            ParameterField::HydrologySedimentCapacity => {
-                format!("{:.3}", config.hydrology_sediment_capacity)
-            }
-            ParameterField::HydrologyBankfullDepth => {
-                format!("{:.1}", config.hydrology_bankfull_depth)
-            }
-            ParameterField::HydrologyFloodplainSoftening => {
-                format!("{:.1}", config.hydrology_floodplain_softening)
-            }
-            ParameterField::HydrologyMinimumSlope => {
-                format!("{:.4}", config.hydrology_minimum_slope)
-            }
-            ParameterField::HydrologyShorelineRadius => {
-                format!("{:.0}", config.hydrology_shoreline_radius)
-            }
-            ParameterField::HydrologyShorelineMaxHeight => {
-                format!("{:.1}", config.hydrology_shoreline_max_height)
-            }
-            ParameterField::HydrologyShorelineSmoothing => {
-                format!("{}", config.hydrology_shoreline_smoothing)
+            ParameterField::HydrologyMajorRiverDepthBoost => {
+                format!("{:.2}", config.hydrology_major_river_depth_boost)
             }
         }
     }
@@ -986,19 +883,9 @@ impl ParameterField {
             ParameterField::HydrologyRainfallFrequency => 0.001,
             ParameterField::HydrologyRainfallContrast => 0.0005,
             ParameterField::HydrologyRainfallDryFactor => 0.0005,
-            ParameterField::HydrologyIterations => 1.0,
-            ParameterField::HydrologyTimeStep => 0.001,
-            ParameterField::HydrologyInfiltrationRate => 0.0005,
-            ParameterField::HydrologyBaseflow => 0.0005,
-            ParameterField::HydrologyErosionRate => 0.0005,
-            ParameterField::HydrologyDepositionRate => 0.0005,
-            ParameterField::HydrologySedimentCapacity => 0.0005,
-            ParameterField::HydrologyBankfullDepth => 0.05,
-            ParameterField::HydrologyFloodplainSoftening => 0.05,
-            ParameterField::HydrologyMinimumSlope => 0.00001,
-            ParameterField::HydrologyShorelineRadius => 1.0,
-            ParameterField::HydrologyShorelineMaxHeight => 0.05,
-            ParameterField::HydrologyShorelineSmoothing => 1.0,
+            ParameterField::HydrologyMajorRiverCount => 1.0,
+            ParameterField::HydrologyMajorRiverMinFlow => 0.0005,
+            ParameterField::HydrologyMajorRiverDepthBoost => 0.01,
             ParameterField::MoistureFrequency => 0.001,
             ParameterField::EquatorTemperature => 0.05,
             ParameterField::PoleTemperature => 0.05,
@@ -1063,19 +950,9 @@ impl ParameterField {
             ParameterField::HydrologyRainfallFrequency => "Spatial frequency of rainfall variation; lower values give broad climate belts, higher values produce smaller storm cells.",
             ParameterField::HydrologyRainfallContrast => "Exponent applied to rainfall noise before mixing; higher values exaggerate contrast between deserts and wet belts.",
             ParameterField::HydrologyRainfallDryFactor => "Minimum rainfall multiplier kept even in driest cells (0 disables rain entirely in deserts).",
-            ParameterField::HydrologyIterations => "How many erosion / deposition passes run; more passes allow the river network to equilibrate.",
-            ParameterField::HydrologyTimeStep => "Years simulated per iteration. Larger steps accelerate change but can destabilize steep slopes.",
-            ParameterField::HydrologyInfiltrationRate => "Fraction of rainfall that soaks into soil before running off, tempering flashy floods.",
-            ParameterField::HydrologyBaseflow => "Background groundwater discharge that keeps rivers alive through dry seasons.",
-            ParameterField::HydrologyErosionRate => "Strength multiplier for fluvial incision; higher values carve deeper, narrower valleys.",
-            ParameterField::HydrologyDepositionRate => "Controls how quickly suspended sediment settles once the flow slackens.",
-            ParameterField::HydrologySedimentCapacity => "Baseline carrying capacity of water. Raising it lets rivers haul more material before depositing.",
-            ParameterField::HydrologyBankfullDepth => "Target channel depth at bankfull discharge; deeper banks hold more water before flooding.",
-            ParameterField::HydrologyFloodplainSoftening => "Vertical smoothing at water edges that shapes wide, gentle floodplains instead of cliffs.",
-            ParameterField::HydrologyMinimumSlope => "Numerical slope floor ensuring wetlands and deltas still drain without oscillation.",
-            ParameterField::HydrologyShorelineRadius => "Horizontal distance (in blocks) inland from the ocean to treat as shoreline for smoothing and beach generation.",
-            ParameterField::HydrologyShorelineMaxHeight => "Maximum elevation above sea level (in blocks) that participates in shoreline smoothing.",
-            ParameterField::HydrologyShorelineSmoothing => "Number of blur passes applied to the shoreline mask for smooth beach outlines.",
+            ParameterField::HydrologyMajorRiverCount => "Caps the number of long continental rivers that are promoted into guaranteed channels.",
+            ParameterField::HydrologyMajorRiverMinFlow => "Minimum fraction of peak discharge a channel must carry to stay part of a major river when tracing upstream.",
+            ParameterField::HydrologyMajorRiverDepthBoost => "Baseline depth (in extra blocks) enforced along promoted major river trunks.",
         }
     }
 
@@ -1133,19 +1010,9 @@ impl ParameterField {
             ParameterField::HydrologyRainfallFrequency => "0.1 - 6.0",
             ParameterField::HydrologyRainfallContrast => "0.3 - 3.0",
             ParameterField::HydrologyRainfallDryFactor => "0.0 - 0.8",
-            ParameterField::HydrologyIterations => "1 - 512 passes",
-            ParameterField::HydrologyTimeStep => "0.01 - 5.0 years",
-            ParameterField::HydrologyInfiltrationRate => "0.00 - 0.90",
-            ParameterField::HydrologyBaseflow => "0.00 - 0.50",
-            ParameterField::HydrologyErosionRate => "0.01 - 2.00",
-            ParameterField::HydrologyDepositionRate => "0.01 - 2.00",
-            ParameterField::HydrologySedimentCapacity => "0.05 - 2.00",
-            ParameterField::HydrologyBankfullDepth => "2 - 80 blocks (meters)",
-            ParameterField::HydrologyFloodplainSoftening => "0 - 40 blocks (meters)",
-            ParameterField::HydrologyMinimumSlope => "0.0001 - 0.05",
-            ParameterField::HydrologyShorelineRadius => "16 - 512 blocks (meters)",
-            ParameterField::HydrologyShorelineMaxHeight => "0 - 80 blocks (meters)",
-            ParameterField::HydrologyShorelineSmoothing => "0 - 8 passes",
+            ParameterField::HydrologyMajorRiverCount => "0 - 32",
+            ParameterField::HydrologyMajorRiverMinFlow => "0.00 - 0.50",
+            ParameterField::HydrologyMajorRiverDepthBoost => "0.10 - 2.50 blocks",
         }
     }
 
@@ -1203,19 +1070,9 @@ impl ParameterField {
             ParameterField::HydrologyRainfallFrequency => "hydrology_rainfall_frequency",
             ParameterField::HydrologyRainfallContrast => "hydrology_rainfall_contrast",
             ParameterField::HydrologyRainfallDryFactor => "hydrology_rainfall_dry_factor",
-            ParameterField::HydrologyIterations => "hydrology_iterations",
-            ParameterField::HydrologyTimeStep => "hydrology_time_step",
-            ParameterField::HydrologyInfiltrationRate => "hydrology_infiltration_rate",
-            ParameterField::HydrologyBaseflow => "hydrology_baseflow",
-            ParameterField::HydrologyErosionRate => "hydrology_erosion_rate",
-            ParameterField::HydrologyDepositionRate => "hydrology_deposition_rate",
-            ParameterField::HydrologySedimentCapacity => "hydrology_sediment_capacity",
-            ParameterField::HydrologyBankfullDepth => "hydrology_bankfull_depth",
-            ParameterField::HydrologyFloodplainSoftening => "hydrology_floodplain_softening",
-            ParameterField::HydrologyMinimumSlope => "hydrology_minimum_slope",
-            ParameterField::HydrologyShorelineRadius => "hydrology_shoreline_radius",
-            ParameterField::HydrologyShorelineMaxHeight => "hydrology_shoreline_max_height",
-            ParameterField::HydrologyShorelineSmoothing => "hydrology_shoreline_smoothing",
+            ParameterField::HydrologyMajorRiverCount => "hydrology_major_river_count",
+            ParameterField::HydrologyMajorRiverMinFlow => "hydrology_major_river_min_flow",
+            ParameterField::HydrologyMajorRiverDepthBoost => "hydrology_major_river_depth_boost",
         }
     }
 
@@ -1297,19 +1154,9 @@ const HYDROLOGY_FIELDS: &[ParameterField] = &[
     ParameterField::HydrologyRainfallFrequency,
     ParameterField::HydrologyRainfallContrast,
     ParameterField::HydrologyRainfallDryFactor,
-    ParameterField::HydrologyIterations,
-    ParameterField::HydrologyTimeStep,
-    ParameterField::HydrologyInfiltrationRate,
-    ParameterField::HydrologyBaseflow,
-    ParameterField::HydrologyErosionRate,
-    ParameterField::HydrologyDepositionRate,
-    ParameterField::HydrologySedimentCapacity,
-    ParameterField::HydrologyBankfullDepth,
-    ParameterField::HydrologyFloodplainSoftening,
-    ParameterField::HydrologyMinimumSlope,
-    ParameterField::HydrologyShorelineRadius,
-    ParameterField::HydrologyShorelineMaxHeight,
-    ParameterField::HydrologyShorelineSmoothing,
+    ParameterField::HydrologyMajorRiverCount,
+    ParameterField::HydrologyMajorRiverMinFlow,
+    ParameterField::HydrologyMajorRiverDepthBoost,
 ];
 
 fn setup(
@@ -1994,19 +1841,9 @@ fn field_step(field: ParameterField) -> f32 {
         ParameterField::HydrologyRainfallFrequency => 0.05,
         ParameterField::HydrologyRainfallContrast => 0.2,
         ParameterField::HydrologyRainfallDryFactor => 0.05,
-        ParameterField::HydrologyIterations => 10.0,
-        ParameterField::HydrologyTimeStep => 0.1,
-        ParameterField::HydrologyInfiltrationRate => 0.02,
-        ParameterField::HydrologyBaseflow => 0.01,
-        ParameterField::HydrologyErosionRate => 0.02,
-        ParameterField::HydrologyDepositionRate => 0.02,
-        ParameterField::HydrologySedimentCapacity => 0.02,
-        ParameterField::HydrologyBankfullDepth => 1.0,
-        ParameterField::HydrologyFloodplainSoftening => 1.0,
-        ParameterField::HydrologyMinimumSlope => 0.0005,
-        ParameterField::HydrologyShorelineRadius => 16.0,
-        ParameterField::HydrologyShorelineMaxHeight => 1.0,
-        ParameterField::HydrologyShorelineSmoothing => 1.0,
+        ParameterField::HydrologyMajorRiverCount => 1.0,
+        ParameterField::HydrologyMajorRiverMinFlow => 0.02,
+        ParameterField::HydrologyMajorRiverDepthBoost => 0.1,
     }
 }
 
@@ -3841,44 +3678,15 @@ fn reset_parameter(field: ParameterField, state: &mut WorldBuilderState) {
         ParameterField::HydrologyRainfallDryFactor => {
             state.working.hydrology_rainfall_dry_factor = defaults.hydrology_rainfall_dry_factor
         }
-        ParameterField::HydrologyIterations => {
-            state.working.hydrology_iterations = defaults.hydrology_iterations
+        ParameterField::HydrologyMajorRiverCount => {
+            state.working.hydrology_major_river_count = defaults.hydrology_major_river_count
         }
-        ParameterField::HydrologyTimeStep => {
-            state.working.hydrology_time_step = defaults.hydrology_time_step
+        ParameterField::HydrologyMajorRiverMinFlow => {
+            state.working.hydrology_major_river_min_flow = defaults.hydrology_major_river_min_flow
         }
-        ParameterField::HydrologyInfiltrationRate => {
-            state.working.hydrology_infiltration_rate = defaults.hydrology_infiltration_rate
-        }
-        ParameterField::HydrologyBaseflow => {
-            state.working.hydrology_baseflow = defaults.hydrology_baseflow
-        }
-        ParameterField::HydrologyErosionRate => {
-            state.working.hydrology_erosion_rate = defaults.hydrology_erosion_rate
-        }
-        ParameterField::HydrologyDepositionRate => {
-            state.working.hydrology_deposition_rate = defaults.hydrology_deposition_rate
-        }
-        ParameterField::HydrologySedimentCapacity => {
-            state.working.hydrology_sediment_capacity = defaults.hydrology_sediment_capacity
-        }
-        ParameterField::HydrologyBankfullDepth => {
-            state.working.hydrology_bankfull_depth = defaults.hydrology_bankfull_depth
-        }
-        ParameterField::HydrologyFloodplainSoftening => {
-            state.working.hydrology_floodplain_softening = defaults.hydrology_floodplain_softening
-        }
-        ParameterField::HydrologyMinimumSlope => {
-            state.working.hydrology_minimum_slope = defaults.hydrology_minimum_slope
-        }
-        ParameterField::HydrologyShorelineRadius => {
-            state.working.hydrology_shoreline_radius = defaults.hydrology_shoreline_radius
-        }
-        ParameterField::HydrologyShorelineMaxHeight => {
-            state.working.hydrology_shoreline_max_height = defaults.hydrology_shoreline_max_height
-        }
-        ParameterField::HydrologyShorelineSmoothing => {
-            state.working.hydrology_shoreline_smoothing = defaults.hydrology_shoreline_smoothing
+        ParameterField::HydrologyMajorRiverDepthBoost => {
+            state.working.hydrology_major_river_depth_boost =
+                defaults.hydrology_major_river_depth_boost
         }
     }
 }

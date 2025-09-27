@@ -33,12 +33,13 @@ fn main() {
     println!("Location: ({:.2}, {:.2})", world_x, world_z);
     println!("Surface elevation: {:.2} (water {:.2})", height, water);
     println!(
-        "Hydrology -> base {:.2}, channel {:.2}, river {:.2}, lake {:.2}, coastal {:.2}",
+        "Hydrology -> base {:.2}, channel {:.2}, river {:.2}, pond {:.2}, coastal {:.2}, major {:.2}",
         hydro.base_height,
         hydro.channel_depth,
         hydro.river_intensity,
-        hydro.lake_intensity,
-        hydro.coastal_factor
+        hydro.pond_intensity,
+        hydro.coastal_factor,
+        generator.major_river_factor(world_x, world_z)
     );
     println!(
         "Surface block: {:?} (depth {} blocks)",
