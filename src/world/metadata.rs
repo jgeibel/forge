@@ -335,6 +335,67 @@ impl ParameterRegistry {
         );
 
         metadata.insert(
+            "micro_detail_scale",
+            ParameterMetadata {
+                name: "Micro Detail Scale",
+                field_name: "micro_detail_scale",
+                category: ParameterCategory::Terrain,
+                description: "Approximate size of micro terrain features in blocks.",
+                min_value: 4.0,
+                max_value: 128.0,
+                units: Some("blocks"),
+                ui_visible: true,
+                ui_tab: Some("Terrain"),
+            },
+        );
+
+        metadata.insert(
+            "micro_detail_amplitude",
+            ParameterMetadata {
+                name: "Micro Detail Amplitude",
+                field_name: "micro_detail_amplitude",
+                category: ParameterCategory::Terrain,
+                description:
+                    "Vertical strength of micro-scale variation added after rolling hills.",
+                min_value: 0.0,
+                max_value: 20.0,
+                units: Some("blocks"),
+                ui_visible: true,
+                ui_tab: Some("Terrain"),
+            },
+        );
+
+        metadata.insert(
+            "micro_detail_roughness",
+            ParameterMetadata {
+                name: "Micro Detail Roughness",
+                field_name: "micro_detail_roughness",
+                category: ParameterCategory::Terrain,
+                description: "Persistence between micro-detail octaves; higher values keep more fine structure.",
+                min_value: 0.2,
+                max_value: 0.95,
+                units: None,
+                ui_visible: true,
+                ui_tab: Some("Terrain"),
+            },
+        );
+
+        metadata.insert(
+            "micro_detail_land_blend",
+            ParameterMetadata {
+                name: "Micro Detail Land Blend",
+                field_name: "micro_detail_land_blend",
+                category: ParameterCategory::Terrain,
+                description: "Exponent governing how micro detail fades toward coasts.",
+                min_value: 0.2,
+                max_value: 2.5,
+                units: None,
+                ui_visible: true,
+                ui_tab: Some("Terrain"),
+            },
+        );
+
+        metadata.insert(
             "highland_bonus",
             ParameterMetadata {
                 name: "Highland Bonus",
@@ -683,6 +744,81 @@ impl ParameterRegistry {
                 description: "Resolution of hydrology simulation",
                 min_value: 64.0,
                 max_value: 8192.0,
+                units: None,
+                ui_visible: true,
+                ui_tab: Some("Hydrology"),
+            },
+        );
+
+        metadata.insert(
+            "hydrology_rainfall",
+            ParameterMetadata {
+                name: "Rainfall",
+                field_name: "hydrology_rainfall",
+                category: ParameterCategory::Hydrology,
+                description: "Baseline rainfall multiplier applied planet-wide.",
+                min_value: 0.1,
+                max_value: 4.0,
+                units: None,
+                ui_visible: true,
+                ui_tab: Some("Hydrology"),
+            },
+        );
+
+        metadata.insert(
+            "hydrology_rainfall_variance",
+            ParameterMetadata {
+                name: "Rainfall Variance",
+                field_name: "hydrology_rainfall_variance",
+                category: ParameterCategory::Hydrology,
+                description: "Strength of rainfall noise layered on humidity belts.",
+                min_value: 0.0,
+                max_value: 3.0,
+                units: None,
+                ui_visible: true,
+                ui_tab: Some("Hydrology"),
+            },
+        );
+
+        metadata.insert(
+            "hydrology_rainfall_frequency",
+            ParameterMetadata {
+                name: "Rainfall Frequency",
+                field_name: "hydrology_rainfall_frequency",
+                category: ParameterCategory::Hydrology,
+                description: "Spatial frequency of rainfall variation; lower values yield broad belts, higher values produce patchy storms.",
+                min_value: 0.1,
+                max_value: 6.0,
+                units: None,
+                ui_visible: true,
+                ui_tab: Some("Hydrology"),
+            },
+        );
+
+        metadata.insert(
+            "hydrology_rainfall_contrast",
+            ParameterMetadata {
+                name: "Rainfall Contrast",
+                field_name: "hydrology_rainfall_contrast",
+                category: ParameterCategory::Hydrology,
+                description: "Exponent that sharpens rainfall differences, exaggerating deserts vs. rainforests.",
+                min_value: 0.3,
+                max_value: 3.0,
+                units: None,
+                ui_visible: true,
+                ui_tab: Some("Hydrology"),
+            },
+        );
+
+        metadata.insert(
+            "hydrology_rainfall_dry_factor",
+            ParameterMetadata {
+                name: "Rainfall Dry Floor",
+                field_name: "hydrology_rainfall_dry_factor",
+                category: ParameterCategory::Hydrology,
+                description: "Minimum rainfall multiplier retained even in the driest cells (0 allows true deserts).",
+                min_value: 0.0,
+                max_value: 0.8,
                 units: None,
                 ui_visible: true,
                 ui_tab: Some("Hydrology"),

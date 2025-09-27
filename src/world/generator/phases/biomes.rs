@@ -90,11 +90,28 @@ impl WorldGenerator {
 
                 height = height.max(4.0);
 
-                let water_level = if hydro.water_level > self.config.sea_level {
+                let mut water_level = if hydro.water_level > self.config.sea_level {
                     hydro.water_level
                 } else {
                     self.config.sea_level
                 };
+
+                if hydro.lake_intensity > 0.05 {
+                    let bed_height = height;
+                    let lake_depth = (water_level - bed_height).max(0.0);
+                    let max_depth = (self.config.hydrology_bankfull_depth * 0.5).clamp(2.0, 8.0);
+                    let min_depth = 0.8_f32;
+                    let desired_depth = lake_depth.clamp(min_depth, max_depth);
+                    water_level = (bed_height + desired_depth).min(water_level);
+                } else if hydro.river_intensity > 0.05 {
+                    let bed_height = height;
+                    let max_depth = (self.config.hydrology_bankfull_depth * 0.3).clamp(1.2, 4.0);
+                    let min_depth = (0.3 + hydro.river_intensity * 0.7).clamp(0.35, max_depth);
+                    let desired_depth = hydro.channel_depth.clamp(min_depth, max_depth);
+                    water_level = (bed_height + desired_depth).min(water_level);
+                }
+
+                water_level = water_level.max(self.config.sea_level).max(height);
 
                 let temperature_c = self.temperature_at_height(world_x, world_z, height);
                 let moisture = self.get_moisture(world_x, world_z);

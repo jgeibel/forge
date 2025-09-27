@@ -344,6 +344,10 @@ enum ParameterField {
     ContinentDriftBeltGain,
     DetailFrequency,
     DetailAmplitude,
+    MicroDetailScale,
+    MicroDetailAmplitude,
+    MicroDetailRoughness,
+    MicroDetailLandBlend,
     MountainFrequency,
     MountainHeight,
     MountainThreshold,
@@ -374,6 +378,8 @@ enum ParameterField {
     HydrologyRainfall,
     HydrologyRainfallVariance,
     HydrologyRainfallFrequency,
+    HydrologyRainfallContrast,
+    HydrologyRainfallDryFactor,
     HydrologyIterations,
     HydrologyTimeStep,
     HydrologyInfiltrationRate,
@@ -408,6 +414,10 @@ impl ParameterField {
             ParameterField::ContinentDriftBeltGain => "Drift Belt Gain",
             ParameterField::DetailFrequency => "Detail Frequency",
             ParameterField::DetailAmplitude => "Detail Amplitude",
+            ParameterField::MicroDetailScale => "Micro Scale (blocks)",
+            ParameterField::MicroDetailAmplitude => "Micro Amplitude",
+            ParameterField::MicroDetailRoughness => "Micro Roughness",
+            ParameterField::MicroDetailLandBlend => "Micro Land Blend",
             ParameterField::MountainFrequency => "Mountain Frequency",
             ParameterField::MountainHeight => "Mountain Height",
             ParameterField::MountainThreshold => "Mountain Threshold",
@@ -438,6 +448,8 @@ impl ParameterField {
             ParameterField::HydrologyRainfall => "Rainfall",
             ParameterField::HydrologyRainfallVariance => "Rainfall Variance",
             ParameterField::HydrologyRainfallFrequency => "Rainfall Frequency",
+            ParameterField::HydrologyRainfallContrast => "Rainfall Contrast",
+            ParameterField::HydrologyRainfallDryFactor => "Rainfall Dry Floor",
             ParameterField::HydrologyIterations => "Iterations",
             ParameterField::HydrologyTimeStep => "Time Step",
             ParameterField::HydrologyInfiltrationRate => "Infiltration",
@@ -510,6 +522,21 @@ impl ParameterField {
             }
             ParameterField::DetailAmplitude => {
                 config.detail_amplitude = (config.detail_amplitude + delta).clamp(1.0, 30.0);
+            }
+            ParameterField::MicroDetailScale => {
+                config.micro_detail_scale = (config.micro_detail_scale + delta).clamp(4.0, 128.0);
+            }
+            ParameterField::MicroDetailAmplitude => {
+                config.micro_detail_amplitude =
+                    (config.micro_detail_amplitude + delta).clamp(0.0, 20.0);
+            }
+            ParameterField::MicroDetailRoughness => {
+                config.micro_detail_roughness =
+                    (config.micro_detail_roughness + delta * 0.05).clamp(0.2, 0.95);
+            }
+            ParameterField::MicroDetailLandBlend => {
+                config.micro_detail_land_blend =
+                    (config.micro_detail_land_blend + delta * 0.05).clamp(0.2, 2.5);
             }
             ParameterField::MountainFrequency => {
                 let freq = (config.mountain_frequency + delta as f64).clamp(0.2, 8.0);
@@ -619,11 +646,19 @@ impl ParameterField {
             }
             ParameterField::HydrologyRainfallVariance => {
                 config.hydrology_rainfall_variance =
-                    (config.hydrology_rainfall_variance + delta).clamp(0.0, 2.0);
+                    (config.hydrology_rainfall_variance + delta).clamp(0.0, 3.0);
             }
             ParameterField::HydrologyRainfallFrequency => {
                 let freq = (config.hydrology_rainfall_frequency + delta as f64).clamp(0.1, 6.0);
                 config.hydrology_rainfall_frequency = freq;
+            }
+            ParameterField::HydrologyRainfallContrast => {
+                config.hydrology_rainfall_contrast =
+                    (config.hydrology_rainfall_contrast + delta * 0.2).clamp(0.3, 3.0);
+            }
+            ParameterField::HydrologyRainfallDryFactor => {
+                config.hydrology_rainfall_dry_factor =
+                    (config.hydrology_rainfall_dry_factor + delta * 0.05).clamp(0.0, 0.8);
             }
             ParameterField::HydrologyIterations => {
                 let step = (delta.round() as i32).clamp(-40, 40);
@@ -640,7 +675,7 @@ impl ParameterField {
             }
             ParameterField::HydrologyBaseflow => {
                 config.hydrology_baseflow =
-                    (config.hydrology_baseflow + delta * 0.01).clamp(0.0, 0.5);
+                    (config.hydrology_baseflow + delta * 0.01).clamp(0.0, 0.3);
             }
             ParameterField::HydrologyErosionRate => {
                 config.hydrology_erosion_rate =
@@ -702,6 +737,10 @@ impl ParameterField {
             ParameterField::ContinentDriftBeltGain => config.continent_drift_belt_gain as f64,
             ParameterField::DetailFrequency => config.detail_frequency,
             ParameterField::DetailAmplitude => config.detail_amplitude as f64,
+            ParameterField::MicroDetailScale => config.micro_detail_scale as f64,
+            ParameterField::MicroDetailAmplitude => config.micro_detail_amplitude as f64,
+            ParameterField::MicroDetailRoughness => config.micro_detail_roughness as f64,
+            ParameterField::MicroDetailLandBlend => config.micro_detail_land_blend as f64,
             ParameterField::MountainFrequency => config.mountain_frequency,
             ParameterField::MountainHeight => config.mountain_height as f64,
             ParameterField::MountainThreshold => config.mountain_threshold as f64,
@@ -732,6 +771,10 @@ impl ParameterField {
             ParameterField::HydrologyRainfall => config.hydrology_rainfall as f64,
             ParameterField::HydrologyRainfallVariance => config.hydrology_rainfall_variance as f64,
             ParameterField::HydrologyRainfallFrequency => config.hydrology_rainfall_frequency,
+            ParameterField::HydrologyRainfallContrast => config.hydrology_rainfall_contrast as f64,
+            ParameterField::HydrologyRainfallDryFactor => {
+                config.hydrology_rainfall_dry_factor as f64
+            }
             ParameterField::HydrologyIterations => config.hydrology_iterations as f64,
             ParameterField::HydrologyTimeStep => config.hydrology_time_step as f64,
             ParameterField::HydrologyInfiltrationRate => config.hydrology_infiltration_rate as f64,
@@ -776,6 +819,16 @@ impl ParameterField {
             }
             ParameterField::DetailFrequency => format!("{:.2}", config.detail_frequency),
             ParameterField::DetailAmplitude => format!("{:.1}", config.detail_amplitude),
+            ParameterField::MicroDetailScale => format!("{:.0}", config.micro_detail_scale),
+            ParameterField::MicroDetailAmplitude => {
+                format!("{:.1}", config.micro_detail_amplitude)
+            }
+            ParameterField::MicroDetailRoughness => {
+                format!("{:.2}", config.micro_detail_roughness)
+            }
+            ParameterField::MicroDetailLandBlend => {
+                format!("{:.2}", config.micro_detail_land_blend)
+            }
             ParameterField::MountainFrequency => format!("{:.2}", config.mountain_frequency),
             ParameterField::MountainHeight => format!("{:.1}", config.mountain_height),
             ParameterField::MountainThreshold => format!("{:.2}", config.mountain_threshold),
@@ -833,6 +886,12 @@ impl ParameterField {
             }
             ParameterField::HydrologyRainfallFrequency => {
                 format!("{:.2}", config.hydrology_rainfall_frequency)
+            }
+            ParameterField::HydrologyRainfallContrast => {
+                format!("{:.2}", config.hydrology_rainfall_contrast)
+            }
+            ParameterField::HydrologyRainfallDryFactor => {
+                format!("{:.2}", config.hydrology_rainfall_dry_factor)
             }
             ParameterField::HydrologyIterations => {
                 format!("{}", config.hydrology_iterations)
@@ -902,6 +961,10 @@ impl ParameterField {
             ParameterField::ContinentDriftBeltGain => 0.001,
             ParameterField::DetailFrequency => 0.001,
             ParameterField::DetailAmplitude => 0.01,
+            ParameterField::MicroDetailScale => 0.05,
+            ParameterField::MicroDetailAmplitude => 0.01,
+            ParameterField::MicroDetailRoughness => 0.0005,
+            ParameterField::MicroDetailLandBlend => 0.0005,
             ParameterField::MountainFrequency => 0.001,
             ParameterField::MountainRangeCount => 0.5,
             ParameterField::MountainRangeWidth => 0.1,
@@ -921,6 +984,8 @@ impl ParameterField {
             ParameterField::HydrologyRainfall => 0.001,
             ParameterField::HydrologyRainfallVariance => 0.001,
             ParameterField::HydrologyRainfallFrequency => 0.001,
+            ParameterField::HydrologyRainfallContrast => 0.0005,
+            ParameterField::HydrologyRainfallDryFactor => 0.0005,
             ParameterField::HydrologyIterations => 1.0,
             ParameterField::HydrologyTimeStep => 0.001,
             ParameterField::HydrologyInfiltrationRate => 0.0005,
@@ -962,6 +1027,10 @@ impl ParameterField {
             ParameterField::ContinentDriftBeltGain => "Additional drift multiplier applied to seeds inside the preferred belt direction.",
             ParameterField::DetailFrequency => "Frequency of mid-scale terrain detail noise; higher values create smaller hills and ridges.",
             ParameterField::DetailAmplitude => "Amplitude of detail noise in blocks (meters); increases contrast in rolling terrain.",
+            ParameterField::MicroDetailScale => "Approximate footprint of micro-scale terrain features in blocks; lower values produce tighter bumps.",
+            ParameterField::MicroDetailAmplitude => "Vertical strength (in blocks) of the micro-detail layer layered atop rolling hills.",
+            ParameterField::MicroDetailRoughness => "Controls persistence between micro-detail octaves; higher values preserve sharper texture.",
+            ParameterField::MicroDetailLandBlend => "Exponent applied when blending micro detail by land coverage; smaller values let detail reach coasts.",
             ParameterField::MountainFrequency => "Base frequency of mountain noise; adjust to cluster mountains closer together or spread them out.",
             ParameterField::MountainHeight => "Peak height above terrain in blocks (meters); realistic mountain elevation.",
             ParameterField::MountainThreshold => "Noise threshold for promoting terrain into mountains; raise to reduce mountain coverage.",
@@ -992,6 +1061,8 @@ impl ParameterField {
             ParameterField::HydrologyRainfall => "Amount of water injected per hydrology cell; higher values strengthen flow everywhere.",
             ParameterField::HydrologyRainfallVariance => "Scales how strongly rainfall fluctuates across the planet; 0 keeps things uniform, higher values create distinct wet and dry regions.",
             ParameterField::HydrologyRainfallFrequency => "Spatial frequency of rainfall variation; lower values give broad climate belts, higher values produce smaller storm cells.",
+            ParameterField::HydrologyRainfallContrast => "Exponent applied to rainfall noise before mixing; higher values exaggerate contrast between deserts and wet belts.",
+            ParameterField::HydrologyRainfallDryFactor => "Minimum rainfall multiplier kept even in driest cells (0 disables rain entirely in deserts).",
             ParameterField::HydrologyIterations => "How many erosion / deposition passes run; more passes allow the river network to equilibrate.",
             ParameterField::HydrologyTimeStep => "Years simulated per iteration. Larger steps accelerate change but can destabilize steep slopes.",
             ParameterField::HydrologyInfiltrationRate => "Fraction of rainfall that soaks into soil before running off, tempering flashy floods.",
@@ -1026,6 +1097,10 @@ impl ParameterField {
             ParameterField::ContinentDriftBeltGain => "0.0 - 1.2",
             ParameterField::DetailFrequency => "1.0 - 15.0",
             ParameterField::DetailAmplitude => "1 - 30 blocks (meters)",
+            ParameterField::MicroDetailScale => "4 - 128 blocks (meters)",
+            ParameterField::MicroDetailAmplitude => "0 - 20 blocks (meters)",
+            ParameterField::MicroDetailRoughness => "0.2 - 0.95",
+            ParameterField::MicroDetailLandBlend => "0.2 - 2.5",
             ParameterField::MountainFrequency => "0.2 - 8.0",
             ParameterField::MountainHeight => "50 - 500 blocks (meters)",
             ParameterField::MountainThreshold => "0.1 - 0.9",
@@ -1054,8 +1129,10 @@ impl ParameterField {
             ParameterField::IslandFalloff => "0.1 - 6.0",
             ParameterField::HydrologyResolution => "128 - 4096 cells",
             ParameterField::HydrologyRainfall => "0.1 - 10.0",
-            ParameterField::HydrologyRainfallVariance => "0.0 - 2.0",
+            ParameterField::HydrologyRainfallVariance => "0.0 - 3.0",
             ParameterField::HydrologyRainfallFrequency => "0.1 - 6.0",
+            ParameterField::HydrologyRainfallContrast => "0.3 - 3.0",
+            ParameterField::HydrologyRainfallDryFactor => "0.0 - 0.8",
             ParameterField::HydrologyIterations => "1 - 512 passes",
             ParameterField::HydrologyTimeStep => "0.01 - 5.0 years",
             ParameterField::HydrologyInfiltrationRate => "0.00 - 0.90",
@@ -1090,6 +1167,10 @@ impl ParameterField {
             ParameterField::ContinentDriftBeltGain => "continent_drift_belt_gain",
             ParameterField::DetailFrequency => "detail_frequency",
             ParameterField::DetailAmplitude => "detail_amplitude",
+            ParameterField::MicroDetailScale => "micro_detail_scale",
+            ParameterField::MicroDetailAmplitude => "micro_detail_amplitude",
+            ParameterField::MicroDetailRoughness => "micro_detail_roughness",
+            ParameterField::MicroDetailLandBlend => "micro_detail_land_blend",
             ParameterField::MountainFrequency => "mountain_frequency",
             ParameterField::MountainHeight => "mountain_height",
             ParameterField::MountainThreshold => "mountain_threshold",
@@ -1120,6 +1201,8 @@ impl ParameterField {
             ParameterField::HydrologyRainfall => "hydrology_rainfall",
             ParameterField::HydrologyRainfallVariance => "hydrology_rainfall_variance",
             ParameterField::HydrologyRainfallFrequency => "hydrology_rainfall_frequency",
+            ParameterField::HydrologyRainfallContrast => "hydrology_rainfall_contrast",
+            ParameterField::HydrologyRainfallDryFactor => "hydrology_rainfall_dry_factor",
             ParameterField::HydrologyIterations => "hydrology_iterations",
             ParameterField::HydrologyTimeStep => "hydrology_time_step",
             ParameterField::HydrologyInfiltrationRate => "hydrology_infiltration_rate",
@@ -1166,6 +1249,10 @@ const CONTINENT_FIELDS: &[ParameterField] = &[
 const TERRAIN_FIELDS: &[ParameterField] = &[
     ParameterField::DetailFrequency,
     ParameterField::DetailAmplitude,
+    ParameterField::MicroDetailScale,
+    ParameterField::MicroDetailAmplitude,
+    ParameterField::MicroDetailRoughness,
+    ParameterField::MicroDetailLandBlend,
     ParameterField::HighlandBonus,
 ];
 
@@ -1208,6 +1295,8 @@ const HYDROLOGY_FIELDS: &[ParameterField] = &[
     ParameterField::HydrologyRainfall,
     ParameterField::HydrologyRainfallVariance,
     ParameterField::HydrologyRainfallFrequency,
+    ParameterField::HydrologyRainfallContrast,
+    ParameterField::HydrologyRainfallDryFactor,
     ParameterField::HydrologyIterations,
     ParameterField::HydrologyTimeStep,
     ParameterField::HydrologyInfiltrationRate,
@@ -1869,6 +1958,10 @@ fn field_step(field: ParameterField) -> f32 {
         ParameterField::ContinentDriftBeltGain => 0.02,
         ParameterField::DetailFrequency => 0.1,
         ParameterField::DetailAmplitude => 1.0,
+        ParameterField::MicroDetailScale => 2.0,
+        ParameterField::MicroDetailAmplitude => 1.0,
+        ParameterField::MicroDetailRoughness => 1.0,
+        ParameterField::MicroDetailLandBlend => 1.0,
         ParameterField::MountainFrequency => 0.1,
         ParameterField::MountainHeight => 4.0,
         ParameterField::MountainThreshold => 0.02,
@@ -1899,10 +1992,12 @@ fn field_step(field: ParameterField) -> f32 {
         ParameterField::HydrologyRainfall => 0.1,
         ParameterField::HydrologyRainfallVariance => 0.05,
         ParameterField::HydrologyRainfallFrequency => 0.05,
+        ParameterField::HydrologyRainfallContrast => 0.2,
+        ParameterField::HydrologyRainfallDryFactor => 0.05,
         ParameterField::HydrologyIterations => 10.0,
         ParameterField::HydrologyTimeStep => 0.1,
         ParameterField::HydrologyInfiltrationRate => 0.02,
-        ParameterField::HydrologyBaseflow => 0.02,
+        ParameterField::HydrologyBaseflow => 0.01,
         ParameterField::HydrologyErosionRate => 0.02,
         ParameterField::HydrologyDepositionRate => 0.02,
         ParameterField::HydrologySedimentCapacity => 0.02,
@@ -1953,6 +2048,23 @@ fn spawn_parameter_row(
     materials: &ButtonMaterials,
     field: ParameterField,
 ) {
+    if matches!(field, ParameterField::MicroDetailScale) {
+        parent.spawn(
+            TextBundle::from_section(
+                "MICRO DETAIL",
+                TextStyle {
+                    font_size: 13.0,
+                    color: Color::srgba(0.62, 0.68, 0.82, 0.9),
+                    ..default()
+                },
+            )
+            .with_style(Style {
+                margin: UiRect::top(Val::Px(8.0)),
+                ..default()
+            }),
+        );
+    }
+
     parent
         .spawn(NodeBundle {
             style: Style {
@@ -3631,6 +3743,18 @@ fn reset_parameter(field: ParameterField, state: &mut WorldBuilderState) {
         ParameterField::DetailAmplitude => {
             state.working.detail_amplitude = defaults.detail_amplitude
         }
+        ParameterField::MicroDetailScale => {
+            state.working.micro_detail_scale = defaults.micro_detail_scale
+        }
+        ParameterField::MicroDetailAmplitude => {
+            state.working.micro_detail_amplitude = defaults.micro_detail_amplitude
+        }
+        ParameterField::MicroDetailRoughness => {
+            state.working.micro_detail_roughness = defaults.micro_detail_roughness
+        }
+        ParameterField::MicroDetailLandBlend => {
+            state.working.micro_detail_land_blend = defaults.micro_detail_land_blend
+        }
         ParameterField::MountainFrequency => {
             state.working.mountain_frequency = defaults.mountain_frequency
         }
@@ -3710,6 +3834,12 @@ fn reset_parameter(field: ParameterField, state: &mut WorldBuilderState) {
         }
         ParameterField::HydrologyRainfallFrequency => {
             state.working.hydrology_rainfall_frequency = defaults.hydrology_rainfall_frequency
+        }
+        ParameterField::HydrologyRainfallContrast => {
+            state.working.hydrology_rainfall_contrast = defaults.hydrology_rainfall_contrast
+        }
+        ParameterField::HydrologyRainfallDryFactor => {
+            state.working.hydrology_rainfall_dry_factor = defaults.hydrology_rainfall_dry_factor
         }
         ParameterField::HydrologyIterations => {
             state.working.hydrology_iterations = defaults.hydrology_iterations

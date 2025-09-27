@@ -13,5 +13,7 @@ pub use chunk_store::{
     PlanetChunkStore, QueuedChunkPayload, StoreUpdate,
 };
 pub use config::{CurrentTemperature, WorldGenConfig};
-pub use generator::{WorldGenPhase, WorldGenProgress, WorldGenerator, WorldPlugin};
+pub use generator::{
+    HydrologyDebugSample, WorldGenPhase, WorldGenProgress, WorldGenerator, WorldPlugin,
+};
 pub use persistence::{ChunkPersistencePlugin, DiskChunkPersistence, PersistenceConfig};

@@ -32,6 +32,7 @@ use continents::{generate_continent_sites, ContinentSite};
 use hydrology::HydrologySimulation;
 use lithology::{generate_plate_lithology, LithologyLayer, LithologyProfile};
 use mountains::MountainRangeMap;
+pub use phases::terrain::HydrologyDebugSample;
 use plates::{PlateMap, PlateSample};
 
 /// Logical phases in the world generation pipeline.
@@ -71,6 +72,7 @@ pub struct WorldGenerator {
     config: WorldGenConfig,
     continent_noise: Perlin,
     detail_noise: Perlin,
+    micro_detail_noise: Perlin,
     mountain_noise: Perlin,
     moisture_noise: Perlin,
     temperature_noise: Perlin,
@@ -176,6 +178,7 @@ impl WorldGenerator {
         let seed = config.seed as u32;
         let continent_noise = Perlin::new(seed);
         let detail_noise = Perlin::new(seed.wrapping_add(1));
+        let micro_detail_noise = Perlin::new(seed.wrapping_add(7));
         let mountain_noise = Perlin::new(seed.wrapping_add(2));
         let moisture_noise = Perlin::new(seed.wrapping_add(3));
         let temperature_noise = Perlin::new(seed.wrapping_add(4));
@@ -186,6 +189,7 @@ impl WorldGenerator {
             config,
             continent_noise,
             detail_noise,
+            micro_detail_noise,
             mountain_noise,
             moisture_noise,
             temperature_noise,
@@ -243,6 +247,7 @@ impl WorldGenerator {
         let seed = metadata.config.seed as u32;
         let continent_noise = Perlin::new(seed);
         let detail_noise = Perlin::new(seed.wrapping_add(1));
+        let micro_detail_noise = Perlin::new(seed.wrapping_add(7));
         let mountain_noise = Perlin::new(seed.wrapping_add(2));
         let moisture_noise = Perlin::new(seed.wrapping_add(3));
         let temperature_noise = Perlin::new(seed.wrapping_add(4));
@@ -253,6 +258,7 @@ impl WorldGenerator {
             config: metadata.config.clone(),
             continent_noise,
             detail_noise,
+            micro_detail_noise,
             mountain_noise,
             moisture_noise,
             temperature_noise,

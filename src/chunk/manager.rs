@@ -1,6 +1,6 @@
 use super::mesh::ChunkMeshJobs;
 use crate::camera::PlayerCamera;
-use crate::chunk::{Chunk, ChunkPos, ChunkStorage};
+use crate::chunk::{Chunk, ChunkPos, ChunkStorage, CHUNK_SIZE};
 use crate::loading::{GameState, LoadingProgress};
 use crate::planet::altitude_system::{should_render_chunks, AltitudeRenderSystem};
 use crate::planet::config::PLANET_SIZE_BLOCKS;
@@ -15,12 +15,16 @@ use bevy::utils::HashSet;
 use futures_lite::future;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
+use std::time::Instant;
 
 const MAX_CONCURRENT_CHUNK_TASKS: usize = 6;
 const MAX_IMMEDIATE_CHUNKS_PER_FRAME: i32 = 4;
 const MAX_QUEUED_CHUNKS_PER_FRAME: i32 = 48;
 const PREFETCH_MARGIN: i32 = 2;
 const VERTICAL_DISTANCE_WEIGHT: i32 = 4;
+const MAX_DYNAMIC_ENQUEUE_BUDGET_MS: f32 = 6.0;
+const VIEW_CULL_THRESHOLD: f32 = -0.35;
+const VIEW_ALIGNMENT_SCALE: f32 = 240.0;
 
 #[derive(Resource, Default)]
 pub struct ChunkManager {
@@ -240,11 +244,12 @@ pub fn spawn_chunk_tasks(
 
     let spawned = chunk_queue.tasks.len() - initial_tasks;
     if spawned > 0 {
-        debug!(
-            "Spawned {} new chunk generation tasks. Active: {}, Pending: {}",
+        info!(
+            "chunk-gen spawn: spawned={} active={} pending={} queued_scheduled={}",
             spawned,
             chunk_queue.tasks.len(),
-            chunk_queue.pending_chunks.len()
+            chunk_queue.pending_chunks.len(),
+            chunk_queue.scheduled.len()
         );
     }
 }
@@ -371,12 +376,16 @@ pub fn spawn_chunks_around_player(
         return;
     }
 
+    let frame_start = Instant::now();
+
     let player_chunk = ChunkPos::from_world_pos(player_transform.translation);
     let view_distance = altitude_system.render_distance as i32;
     let prefetch_distance = view_distance + PREFETCH_MARGIN;
     let max_horizontal_distance_sq = prefetch_distance * prefetch_distance;
 
     let mut candidates: Vec<(ChunkPos, i32)> = Vec::new();
+
+    let forward: Vec3 = player_transform.forward().into();
 
     for dx in -prefetch_distance..=prefetch_distance {
         for dz in -prefetch_distance..=prefetch_distance {
@@ -415,7 +424,22 @@ pub fn spawn_chunks_around_player(
 
                 let vertical_distance = (chunk_y - player_chunk.y).abs();
                 let vertical_score = vertical_distance * VERTICAL_DISTANCE_WEIGHT;
-                let score = horizontal_distance_sq + vertical_score;
+                let mut score = horizontal_distance_sq + vertical_score;
+
+                let chunk_center = chunk_pos.to_world_pos() + Vec3::splat(CHUNK_SIZE as f32 * 0.5);
+                let to_chunk = chunk_center - player_transform.translation;
+                let distance_sq = to_chunk.length_squared();
+
+                if distance_sq > f32::EPSILON {
+                    let alignment = forward.dot(to_chunk / distance_sq.sqrt());
+                    if alignment < VIEW_CULL_THRESHOLD && horizontal_distance_sq > 4 {
+                        continue;
+                    }
+                    let penalty =
+                        ((1.0 - alignment).max(0.0_f32) * VIEW_ALIGNMENT_SCALE).round() as i32;
+                    score += penalty.max(0);
+                }
+
                 candidates.push((chunk_pos, score));
             }
         }
@@ -426,7 +450,14 @@ pub fn spawn_chunks_around_player(
     let mut immediate_spawned = 0;
     let mut queued = 0;
 
+    let mut budget_exhausted = false;
+
     for (chunk_pos, _) in candidates {
+        if frame_start.elapsed().as_secs_f32() * 1000.0 >= MAX_DYNAMIC_ENQUEUE_BUDGET_MS {
+            budget_exhausted = true;
+            break;
+        }
+
         if chunk_manager.loaded_chunks.contains(&chunk_pos) {
             continue;
         }
@@ -520,6 +551,29 @@ pub fn spawn_chunks_around_player(
             }
         }
     }
+
+    if budget_exhausted {
+        info!(
+            "chunk-load throttled: budget_ms={} immediate={} queued={} pending={}",
+            MAX_DYNAMIC_ENQUEUE_BUDGET_MS,
+            immediate_spawned,
+            queued,
+            chunk_queue.pending_chunks.len()
+        );
+        return;
+    }
+
+    if immediate_spawned > 0 || queued > 0 {
+        let elapsed_ms = frame_start.elapsed().as_secs_f32() * 1000.0;
+        info!(
+            "chunk-load enqueue: immediate={} queued={} pending={} tasks={} elapsed_ms={:.2}",
+            immediate_spawned,
+            queued,
+            chunk_queue.pending_chunks.len(),
+            chunk_queue.tasks.len(),
+            elapsed_ms
+        );
+    }
 }
 
 pub fn sync_dirty_chunks_to_store(
@@ -576,12 +630,32 @@ pub fn collect_chunk_payloads(
     mut events: EventReader<ChunkPayloadReady>,
     mut queue: ResMut<ChunkPayloadQueue>,
 ) {
+    let mut total_duration_ms = 0.0_f32;
+    let mut total_bytes = 0_usize;
+    let mut payload_count = 0_usize;
+
     for event in events.read() {
+        let start = Instant::now();
+        let bytes = event.storage.encode_bytes();
+        let duration_ms = start.elapsed().as_secs_f32() * 1000.0;
+
+        total_duration_ms += duration_ms;
+        total_bytes += bytes.len();
+        payload_count += 1;
+
         queue.enqueue(QueuedChunkPayload {
             position: event.position,
             revision: event.revision,
-            bytes: event.storage.encode_bytes(),
+            bytes,
         });
+    }
+
+    if payload_count > 0 {
+        let average_ms = total_duration_ms / payload_count as f32;
+        info!(
+            "chunk-payload encode: count={} total_ms={:.2} avg_ms={:.2} total_bytes={}",
+            payload_count, total_duration_ms, average_ms, total_bytes
+        );
     }
 }
 
@@ -607,15 +681,17 @@ pub fn log_chunk_streaming_metrics(
     let avg_gen_ms = chunk_queue.average_duration_ms().unwrap_or(0.0);
     let inflight = chunk_queue.inflight_count();
 
-    debug!(
-        "chunk-stream: pending={} active_tasks={} inflight={} scheduled={} gen_avg_ms={:.2} mesh_tasks={} mesh_scheduled={} mesh_avg_ms={:.2}",
-        pending,
-        active_tasks,
-        inflight,
-        scheduled,
-        avg_gen_ms,
-        mesh_tasks,
-        mesh_scheduled,
-        avg_mesh_ms,
-    );
+    if pending > 0 || active_tasks > 0 || mesh_tasks > 0 {
+        info!(
+            "chunk-stream: pending={} active_tasks={} inflight={} scheduled={} gen_avg_ms={:.2} mesh_tasks={} mesh_scheduled={} mesh_avg_ms={:.2}",
+            pending,
+            active_tasks,
+            inflight,
+            scheduled,
+            avg_gen_ms,
+            mesh_tasks,
+            mesh_scheduled,
+            avg_mesh_ms,
+        );
+    }
 }

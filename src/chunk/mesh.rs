@@ -105,6 +105,9 @@ pub fn apply_chunk_mesh_results(
 
     let mut finished_indices = Vec::new();
     let mut finished_payloads = Vec::new();
+    let mut total_duration_ms = 0.0_f32;
+    let mut total_vertices = 0_usize;
+    let mut processed = 0_usize;
 
     for (index, (entity, task)) in mesh_jobs.tasks.iter_mut().enumerate() {
         if let Some(result) = future::block_on(future::poll_once(task)) {
@@ -130,6 +133,10 @@ pub fn apply_chunk_mesh_results(
 
         let opaque_vertices = result.opaque_mesh.count_vertices();
         let water_vertices = result.water_mesh.count_vertices();
+
+        processed += 1;
+        total_duration_ms += result.duration * 1000.0;
+        total_vertices += (opaque_vertices + water_vertices) as usize;
 
         if opaque_vertices == 0 && water_vertices == 0 {
             entity_commands.remove::<Handle<Mesh>>();
@@ -209,6 +216,14 @@ pub fn apply_chunk_mesh_results(
 
             commands.entity(entity).add_child(water_entity);
         }
+    }
+
+    if processed > 0 {
+        let average_ms = total_duration_ms / processed as f32;
+        info!(
+            "chunk-mesh apply: count={} total_ms={:.2} avg_ms={:.2} total_vertices={}",
+            processed, total_duration_ms, average_ms, total_vertices
+        );
     }
 
     if !finished_indices.is_empty() {

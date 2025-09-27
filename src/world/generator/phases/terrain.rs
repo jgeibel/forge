@@ -2,6 +2,17 @@ use noise::{NoiseFn, Perlin};
 
 use super::super::{hydrology::HydrologySample, util::lerp_f32, WorldGenerator};
 
+#[derive(Debug, Clone, Copy)]
+pub struct HydrologyDebugSample {
+    pub base_height: f32,
+    pub terrain_height: f32,
+    pub channel_depth: f32,
+    pub water_level: f32,
+    pub river_intensity: f32,
+    pub lake_intensity: f32,
+    pub coastal_factor: f32,
+}
+
 #[derive(Clone, Copy)]
 pub(crate) struct TerrainComponents {
     pub(crate) base_height: f32,
@@ -70,6 +81,34 @@ impl WorldGenerator {
         let detail =
             (detail1 + detail2 + detail3) / 1.75 * self.config.detail_amplitude * land_factor;
 
+        let micro_scale = self.config.micro_detail_scale.max(1.0);
+        let persistence = self.config.micro_detail_roughness.clamp(0.1, 0.95);
+        let mut micro_total = 0.0f32;
+        let mut micro_weight = 0.0f32;
+        let mut current_scale = micro_scale;
+        let mut amplitude = 1.0f32;
+        for octave in 0..3 {
+            let offset = 3000.0 * (octave as f32 + 1.0);
+            let sample = self.world_noise(
+                &self.micro_detail_noise,
+                world_x + offset,
+                world_z - offset,
+                current_scale.max(1.0),
+            ) as f32;
+            micro_total += sample * amplitude;
+            micro_weight += amplitude;
+            amplitude *= persistence;
+            current_scale = (current_scale * 0.5).max(2.0);
+        }
+        let micro_base = if micro_weight > 0.0 {
+            (micro_total / micro_weight).clamp(-1.0, 1.0)
+        } else {
+            0.0
+        };
+        let land_blend = self.config.micro_detail_land_blend.max(0.05);
+        let mask = land_factor.powf(land_blend);
+        let micro_detail = micro_base * self.config.micro_detail_amplitude * mask;
+
         let mountain_scale = 200.0;
         let mountain1 = self.world_noise(&self.mountain_noise, world_x, world_z, mountain_scale);
         let mountain2 = self.world_noise(
@@ -109,7 +148,8 @@ impl WorldGenerator {
             * interior_mask)
             + range_highlands;
 
-        let land_height = sea_level + detail + highlands + mountains + land_factor * 16.0;
+        let land_height =
+            sea_level + detail + micro_detail + highlands + mountains + land_factor * 16.0;
         let island_raw = self.fractal_periodic(
             &self.island_noise,
             u,
@@ -253,5 +293,21 @@ impl WorldGenerator {
         }
 
         sample
+    }
+
+    pub fn hydrology_debug_sample(&self, world_x: f32, world_z: f32) -> HydrologyDebugSample {
+        let components = self.terrain_components(world_x, world_z);
+        let sample = self.sample_hydrology(world_x, world_z, components.base_height);
+        let terrain_height = self.get_height(world_x, world_z);
+
+        HydrologyDebugSample {
+            base_height: components.base_height,
+            terrain_height,
+            channel_depth: sample.channel_depth,
+            water_level: sample.water_level,
+            river_intensity: sample.river_intensity,
+            lake_intensity: sample.lake_intensity,
+            coastal_factor: sample.coastal_factor,
+        }
     }
 }

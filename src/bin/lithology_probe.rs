@@ -28,9 +28,18 @@ fn main() {
     let profile = generator.lithology_profile_at(world_x, world_z);
     let height = generator.get_height(world_x, world_z);
     let water = generator.get_water_level(world_x, world_z);
+    let hydro = generator.hydrology_debug_sample(world_x, world_z);
 
     println!("Location: ({:.2}, {:.2})", world_x, world_z);
     println!("Surface elevation: {:.2} (water {:.2})", height, water);
+    println!(
+        "Hydrology -> base {:.2}, channel {:.2}, river {:.2}, lake {:.2}, coastal {:.2}",
+        hydro.base_height,
+        hydro.channel_depth,
+        hydro.river_intensity,
+        hydro.lake_intensity,
+        hydro.coastal_factor
+    );
     println!(
         "Surface block: {:?} (depth {} blocks)",
         profile.surface_block, profile.surface_depth

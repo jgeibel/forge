@@ -47,6 +47,7 @@ pub(super) struct HydrologySimulation {
     pub(super) discharge: Vec<f32>,
     pub(super) major_flow: Vec<f32>,
     pub(super) coastal_factor: Vec<f32>,
+    pub(super) rainfall_peak: f32,
 }
 
 impl Default for HydrologySimulation {
@@ -83,6 +84,7 @@ impl HydrologySimulation {
             discharge: Vec::new(),
             major_flow: Vec::new(),
             coastal_factor: Vec::new(),
+            rainfall_peak: 0.0,
         }
     }
 
@@ -176,6 +178,8 @@ impl HydrologySimulation {
         });
 
         let run_hydrology = config.hydrology_iterations > 0 && config.hydrology_time_step > 0.0;
+        let rainfall_peak = rainfall.iter().copied().fold(0.0f32, |acc, v| acc.max(v));
+        let rainfall_bias = (rainfall_peak * 0.4 + config.hydrology_rainfall * 0.35).max(0.2);
 
         let (discharge, mut channel_depth, max_discharge, max_depth) = if run_hydrology {
             let infiltration = compute_infiltration(
@@ -187,12 +191,17 @@ impl HydrologySimulation {
             );
 
             let dt = config.hydrology_time_step.max(0.01);
-            let baseflow = (config.hydrology_baseflow * cell_area).max(0.0);
+            let baseflow = (config.hydrology_baseflow * cell_area * 0.12).max(0.0);
 
             let mut runoff = vec![0.0_f32; count];
             for idx in 0..count {
                 let effective_rain = rainfall[idx] * (1.0 - infiltration[idx]);
-                runoff[idx] = effective_rain * cell_area * dt + baseflow * dt;
+                let rain_runoff = effective_rain * cell_area * dt;
+                let rainfall_scale = ((rainfall[idx] + rainfall_bias)
+                    / (rainfall_peak + rainfall_bias))
+                    .clamp(0.0, 1.0);
+                let baseflow_term = baseflow * rainfall_scale * dt;
+                runoff[idx] = rain_runoff + baseflow_term;
             }
 
             let mut discharge = vec![0.0_f32; count];
@@ -362,31 +371,62 @@ impl HydrologySimulation {
 
             let is_sink = out_count == 0;
             let is_lake = is_sink && lake_depth > 1.0;
+            let rain_ratio =
+                ((rainfall[idx] + rainfall_bias) / (rainfall_peak + rainfall_bias)).clamp(0.0, 1.0);
+            let rain_mix = 0.25 + 0.75 * rain_ratio.powf(1.1);
 
-            if is_lake {
-                depth = depth.max(lake_depth);
-                lake_intensity[idx] =
-                    (lake_depth / (config.hydrology_bankfull_depth + 1.0)).clamp(0.0, 1.0);
-                river_intensity[idx] = 0.0;
-                water_level[idx] = fill;
-                major_flow[idx] = 0.0;
-            } else {
-                let q_factor = discharge_norm.powf(0.4);
-                let has_channel = discharge_norm > 0.008 || depth_ratio > 0.02;
-                if has_channel {
-                    let surface_ratio = 0.35 + 0.45 * depth_ratio;
-                    let surface = (bed + depth * surface_ratio).max(sea_level);
-                    water_level[idx] = surface.min(fill);
-                    river_intensity[idx] = ((q_factor * 0.6) + (depth_ratio * 0.4)).clamp(0.0, 1.0);
-                    lake_intensity[idx] = 0.0;
-                    major_flow[idx] = discharge_norm.powf(0.45);
+            if is_lake && rain_mix > 0.35 {
+                let slope = terrain_slope[idx];
+                let flatness = (1.0 - (slope / 0.28)).clamp(0.0, 1.0);
+                let raw_cap = (config.hydrology_bankfull_depth * 0.22).clamp(1.8, 3.4);
+                let max_depth = 0.9 + flatness * (raw_cap - 0.9);
+                let mut effective_depth = lake_depth.min(max_depth) * rain_mix;
+                if effective_depth < 0.15 {
+                    effective_depth = 0.0;
+                }
+
+                if effective_depth > 0.0 {
+                    depth = depth.max(effective_depth);
+                    lake_intensity[idx] = (effective_depth
+                        / (config.hydrology_bankfull_depth + 6.0))
+                        .clamp(0.0, 0.55);
+                    river_intensity[idx] = 0.0;
+                    water_level[idx] = (bed + effective_depth).max(sea_level).min(fill);
+                    major_flow[idx] = 0.0;
                 } else {
-                    // Dry land should sit at sea level so chunk baking doesn't flood mountains.
-                    water_level[idx] = sea_level;
+                    water_level[idx] = bed.max(sea_level);
                     river_intensity[idx] = 0.0;
                     lake_intensity[idx] = 0.0;
                     major_flow[idx] = 0.0;
-                    depth *= 0.5;
+                }
+            } else {
+                let q_factor = discharge_norm.powf(0.4);
+                let has_channel = discharge_norm > 0.008 || depth_ratio > 0.02;
+                if has_channel && rain_mix > 0.2 {
+                    let surface_ratio = 0.35 + 0.45 * depth_ratio;
+                    let mut surface = (bed + depth * surface_ratio).max(sea_level);
+
+                    let max_fill_fraction = 0.2_f32;
+                    let max_fill_depth =
+                        (config.hydrology_bankfull_depth * max_fill_fraction).clamp(1.2, 3.2);
+                    let depth_scale = rain_mix.clamp(0.0, 1.0);
+                    let allowed_depth = depth.min(max_fill_depth) * depth_scale;
+                    let max_surface = bed + allowed_depth;
+                    surface = surface.min(max_surface);
+
+                    let min_surface = bed.max(sea_level);
+                    surface = surface.clamp(min_surface, fill);
+                    water_level[idx] = surface;
+                    let intensity_base = ((q_factor * 0.6) + (depth_ratio * 0.4)).clamp(0.0, 1.0);
+                    river_intensity[idx] = (intensity_base * depth_scale).clamp(0.0, 1.0);
+                    lake_intensity[idx] = 0.0;
+                    major_flow[idx] = (discharge_norm.powf(0.45) * depth_scale).clamp(0.0, 1.0);
+                } else {
+                    water_level[idx] = bed.max(sea_level);
+                    river_intensity[idx] = 0.0;
+                    lake_intensity[idx] = 0.0;
+                    major_flow[idx] = 0.0;
+                    depth *= 0.35;
                 }
             }
 
@@ -418,6 +458,7 @@ impl HydrologySimulation {
             discharge,
             major_flow,
             coastal_factor,
+            rainfall_peak,
         }
     }
 
@@ -475,13 +516,21 @@ impl HydrologySimulation {
             lake_intensity = 0.0;
         }
 
+        let rainfall_bias = (self.rainfall_peak * 0.4 + 0.3).max(0.3);
+        let rain_ratio =
+            ((rainfall + rainfall_bias) / (self.rainfall_peak + rainfall_bias)).clamp(0.0, 1.0);
+        let rain_mix = 0.25 + 0.75 * rain_ratio.powf(1.1);
+        water_level = self.sea_level + (water_level - self.sea_level) * rain_mix;
+        river_intensity *= rain_mix;
+        lake_intensity *= rain_mix;
+
         HydrologySample {
             channel_depth,
             water_level,
             river_intensity,
             lake_intensity,
             rainfall,
-            major_river: major,
+            major_river: (major * rain_mix).clamp(0.0, 1.0),
             coastal_factor: coastal,
         }
     }
@@ -491,13 +540,25 @@ impl super::WorldGenerator {
     pub fn get_water_level(&self, world_x: f32, world_z: f32) -> f32 {
         let components = self.terrain_components(world_x, world_z);
         let sample = self.sample_hydrology(world_x, world_z, components.base_height);
-        if sample.water_level > self.config.sea_level {
-            sample.water_level
-        } else if components.base_height <= self.config.sea_level {
-            self.config.sea_level
-        } else {
-            self.config.sea_level
+        let mut water_level = sample.water_level.max(self.config.sea_level);
+        let height = self.get_height(world_x, world_z);
+
+        if sample.lake_intensity > 0.05 {
+            let bed_height = height;
+            let lake_depth = (water_level - bed_height).max(0.0);
+            let max_depth = (self.config.hydrology_bankfull_depth * 0.45).clamp(2.0, 6.0);
+            let min_depth = 1.0_f32;
+            let desired_depth = lake_depth.clamp(min_depth, max_depth);
+            water_level = (bed_height + desired_depth).min(water_level);
+        } else if sample.river_intensity > 0.05 {
+            let bed_height = height;
+            let max_depth = (self.config.hydrology_bankfull_depth * 0.28).clamp(1.1, 3.2);
+            let min_depth = (0.4 + sample.river_intensity * 0.6).clamp(0.45, max_depth);
+            let desired_depth = sample.channel_depth.clamp(min_depth, max_depth);
+            water_level = (bed_height + desired_depth).min(water_level);
         }
+
+        water_level.max(self.config.sea_level)
     }
 
     pub fn river_intensity(&self, world_x: f32, world_z: f32) -> f32 {

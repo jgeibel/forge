@@ -52,6 +52,10 @@ pub struct WorldGenConfig {
     pub continent_drift_belt_gain: f32,
     pub detail_frequency: f64,
     pub detail_amplitude: f32,
+    pub micro_detail_scale: f32,
+    pub micro_detail_amplitude: f32,
+    pub micro_detail_roughness: f32,
+    pub micro_detail_land_blend: f32,
     pub mountain_frequency: f64,
     pub mountain_height: f32,
     pub mountain_threshold: f32,
@@ -82,6 +86,8 @@ pub struct WorldGenConfig {
     pub hydrology_rainfall: f32,
     pub hydrology_rainfall_variance: f32,
     pub hydrology_rainfall_frequency: f64,
+    pub hydrology_rainfall_contrast: f32,
+    pub hydrology_rainfall_dry_factor: f32,
     pub hydrology_iterations: u32,
     pub hydrology_time_step: f32,
     pub hydrology_infiltration_rate: f32,
@@ -120,6 +126,10 @@ impl Default for WorldGenConfig {
             continent_drift_belt_gain: CONTINENT_DRIFT_BELT_GAIN,
             detail_frequency: DETAIL_FREQUENCY,
             detail_amplitude: DETAIL_AMPLITUDE,
+            micro_detail_scale: MICRO_DETAIL_SCALE,
+            micro_detail_amplitude: MICRO_DETAIL_AMPLITUDE,
+            micro_detail_roughness: MICRO_DETAIL_ROUGHNESS,
+            micro_detail_land_blend: MICRO_DETAIL_LAND_BLEND,
             mountain_frequency: MOUNTAIN_FREQUENCY,
             mountain_height: MOUNTAIN_HEIGHT,
             mountain_threshold: MOUNTAIN_THRESHOLD,
@@ -150,6 +160,8 @@ impl Default for WorldGenConfig {
             hydrology_rainfall: HYDROLOGY_RAINFALL,
             hydrology_rainfall_variance: HYDROLOGY_RAINFALL_VARIANCE,
             hydrology_rainfall_frequency: HYDROLOGY_RAINFALL_FREQUENCY,
+            hydrology_rainfall_contrast: HYDROLOGY_RAINFALL_CONTRAST,
+            hydrology_rainfall_dry_factor: HYDROLOGY_RAINFALL_DRY_FACTOR,
             hydrology_iterations: HYDROLOGY_ITERATIONS,
             hydrology_time_step: HYDROLOGY_TIME_STEP,
             hydrology_infiltration_rate: HYDROLOGY_INFILTRATION_RATE,
@@ -215,6 +227,10 @@ impl WorldGenConfig {
             // to maintain constant physical feature size
             detail_frequency: (planet_size as f64 / 100.0), // Hills ~100 blocks wide
             detail_amplitude: 12.0,                         // Hills always 12 blocks tall
+            micro_detail_scale: defaults::MICRO_DETAIL_SCALE, // Adds sub-20 block terrain break-up
+            micro_detail_amplitude: defaults::MICRO_DETAIL_AMPLITUDE,
+            micro_detail_roughness: defaults::MICRO_DETAIL_ROUGHNESS,
+            micro_detail_land_blend: defaults::MICRO_DETAIL_LAND_BLEND,
 
             // SCALE-INVARIANT: Mountain dimensions
             // Target: mountains should be ~200-800 blocks wide regardless of world size
@@ -261,20 +277,22 @@ impl WorldGenConfig {
             hydrology_resolution: ((planet_size as f32 / 16.0).sqrt() as u32)
                 .max(256)
                 .min(4096),
-            hydrology_rainfall: 1.4,
-            hydrology_rainfall_variance: 0.4,
-            hydrology_rainfall_frequency: (planet_size as f64 / 200.0), // Rain patterns ~200 blocks wide
-            hydrology_iterations: (80.0
+            hydrology_rainfall: 1.1,
+            hydrology_rainfall_variance: 0.6,
+            hydrology_rainfall_frequency: (planet_size as f64 / 220.0), // Rain patterns ~220 blocks wide
+            hydrology_rainfall_contrast: defaults::HYDROLOGY_RAINFALL_CONTRAST,
+            hydrology_rainfall_dry_factor: defaults::HYDROLOGY_RAINFALL_DRY_FACTOR,
+            hydrology_iterations: (72.0
                 * (planet_size as f32 / STANDARD_WORLD_SIZE).clamp(0.5, 2.0))
             .round()
-            .max(20.0) as u32,
-            hydrology_time_step: 0.35,
-            hydrology_infiltration_rate: 0.32,
-            hydrology_baseflow: 0.015,
-            hydrology_erosion_rate: 0.18,
-            hydrology_deposition_rate: 0.38,
-            hydrology_sediment_capacity: 0.65,
-            hydrology_bankfull_depth: 16.0,
+            .clamp(24.0, 144.0) as u32,
+            hydrology_time_step: 0.32,
+            hydrology_infiltration_rate: 0.52,
+            hydrology_baseflow: 0.006,
+            hydrology_erosion_rate: 0.15,
+            hydrology_deposition_rate: 0.32,
+            hydrology_sediment_capacity: 0.5,
+            hydrology_bankfull_depth: 15.0,
             hydrology_floodplain_softening: 6.0,
             hydrology_minimum_slope: 0.0005,
             hydrology_shoreline_radius: 96.0,

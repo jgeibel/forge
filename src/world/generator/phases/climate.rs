@@ -21,14 +21,19 @@ impl WorldGenerator {
             2.1,
             0.55,
         ) as f32;
+
         if variance <= f32::EPSILON {
             return base;
         }
 
         let humidity = self.sample_moisture(world_x, world_z) * 2.0 - 1.0;
-        let noise = noise.clamp(-1.0, 1.0);
-        let combined = (humidity * 0.6 + noise * 0.4).clamp(-1.0, 1.0);
-        let multiplier = (1.0 + combined * variance).max(0.0);
+        let combined = (humidity * 0.6 + noise.clamp(-1.0, 1.0) * 0.4).clamp(-1.0, 1.0);
+        let wetness = ((combined + 1.0) * 0.5)
+            .clamp(0.0, 1.0)
+            .powf(self.config.hydrology_rainfall_contrast.max(0.25));
+        let min_multiplier = self.config.hydrology_rainfall_dry_factor.clamp(0.0, 1.0);
+        let max_multiplier = 1.0 + variance;
+        let multiplier = lerp_f32(min_multiplier, max_multiplier, wetness);
         base * multiplier
     }
 

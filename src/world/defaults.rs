@@ -23,6 +23,10 @@ pub mod continent {
 pub mod terrain {
     pub const DETAIL_FREQUENCY: f64 = 7.0;
     pub const DETAIL_AMPLITUDE: f32 = 8.0;
+    pub const MICRO_DETAIL_SCALE: f32 = 12.0;
+    pub const MICRO_DETAIL_AMPLITUDE: f32 = 10.0;
+    pub const MICRO_DETAIL_ROUGHNESS: f32 = 0.7;
+    pub const MICRO_DETAIL_LAND_BLEND: f32 = 0.4;
     pub const HIGHLAND_BONUS: f32 = 20_f32;
 }
 pub mod mountain {
@@ -57,18 +61,20 @@ pub mod island {
     pub const ISLAND_FALLOFF: f32 = 1.8000007_f32;
 }
 pub mod hydrology {
-    pub const HYDROLOGY_RESOLUTION: u32 = 1536;
-    pub const HYDROLOGY_RAINFALL: f32 = 1.4_f32;
-    pub const HYDROLOGY_RAINFALL_VARIANCE: f32 = 0.4_f32;
-    pub const HYDROLOGY_RAINFALL_FREQUENCY: f64 = 0.8_f64;
-    pub const HYDROLOGY_ITERATIONS: u32 = 96_u32;
-    pub const HYDROLOGY_TIME_STEP: f32 = 0.35_f32;
-    pub const HYDROLOGY_INFILTRATION_RATE: f32 = 0.32_f32;
-    pub const HYDROLOGY_BASEFLOW: f32 = 0.012_f32;
-    pub const HYDROLOGY_EROSION_RATE: f32 = 0.2_f32;
-    pub const HYDROLOGY_DEPOSITION_RATE: f32 = 0.42_f32;
-    pub const HYDROLOGY_SEDIMENT_CAPACITY: f32 = 0.65_f32;
-    pub const HYDROLOGY_BANKFULL_DEPTH: f32 = 15.0_f32;
+    pub const HYDROLOGY_RESOLUTION: u32 = 1280;
+    pub const HYDROLOGY_RAINFALL: f32 = 1.1_f32;
+    pub const HYDROLOGY_RAINFALL_VARIANCE: f32 = 0.6_f32;
+    pub const HYDROLOGY_RAINFALL_FREQUENCY: f64 = 0.74_f64;
+    pub const HYDROLOGY_RAINFALL_CONTRAST: f32 = 1.6_f32;
+    pub const HYDROLOGY_RAINFALL_DRY_FACTOR: f32 = 0.08_f32;
+    pub const HYDROLOGY_ITERATIONS: u32 = 72_u32;
+    pub const HYDROLOGY_TIME_STEP: f32 = 0.32_f32;
+    pub const HYDROLOGY_INFILTRATION_RATE: f32 = 0.52_f32;
+    pub const HYDROLOGY_BASEFLOW: f32 = 0.006_f32;
+    pub const HYDROLOGY_EROSION_RATE: f32 = 0.15_f32;
+    pub const HYDROLOGY_DEPOSITION_RATE: f32 = 0.32_f32;
+    pub const HYDROLOGY_SEDIMENT_CAPACITY: f32 = 0.5_f32;
+    pub const HYDROLOGY_BANKFULL_DEPTH: f32 = 14.0_f32;
     pub const HYDROLOGY_FLOODPLAIN_SOFTENING: f32 = 6.0_f32;
     pub const HYDROLOGY_MINIMUM_SLOPE: f32 = 0.0005_f32;
     pub const HYDROLOGY_SHORELINE_RADIUS: f32 = 96.0_f32;

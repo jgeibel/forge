@@ -60,6 +60,10 @@ pub fn detect_changes(working: &WorldGenConfig, defaults: &WorldGenConfig) -> Ve
     check_field!(continent_frequency, "CONTINENT_FREQUENCY");
     check_field!(detail_frequency, "DETAIL_FREQUENCY");
     check_field!(detail_amplitude, "DETAIL_AMPLITUDE");
+    check_field!(micro_detail_scale, "MICRO_DETAIL_SCALE");
+    check_field!(micro_detail_amplitude, "MICRO_DETAIL_AMPLITUDE");
+    check_field!(micro_detail_roughness, "MICRO_DETAIL_ROUGHNESS");
+    check_field!(micro_detail_land_blend, "MICRO_DETAIL_LAND_BLEND");
     check_field!(mountain_frequency, "MOUNTAIN_FREQUENCY");
     check_field!(mountain_height, "MOUNTAIN_HEIGHT");
     check_field!(mountain_threshold, "MOUNTAIN_THRESHOLD");
@@ -83,6 +87,11 @@ pub fn detect_changes(working: &WorldGenConfig, defaults: &WorldGenConfig) -> Ve
     check_field!(hydrology_rainfall, "HYDROLOGY_RAINFALL");
     check_field!(hydrology_rainfall_variance, "HYDROLOGY_RAINFALL_VARIANCE");
     check_field!(hydrology_rainfall_frequency, "HYDROLOGY_RAINFALL_FREQUENCY");
+    check_field!(hydrology_rainfall_contrast, "HYDROLOGY_RAINFALL_CONTRAST");
+    check_field!(
+        hydrology_rainfall_dry_factor,
+        "HYDROLOGY_RAINFALL_DRY_FACTOR"
+    );
     check_field!(hydrology_iterations, "HYDROLOGY_ITERATIONS");
     check_field!(hydrology_time_step, "HYDROLOGY_TIME_STEP");
     check_field!(hydrology_infiltration_rate, "HYDROLOGY_INFILTRATION_RATE");
