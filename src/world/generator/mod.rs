@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{BufWriter, Cursor, Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use super::chunk_store::{
     ChunkPayloadQueue, ChunkPayloadReady, PayloadDebugPlugin, PlanetChunkStore,
@@ -78,11 +79,11 @@ pub struct WorldGenerator {
     temperature_noise: Perlin,
     island_noise: Perlin,
     hydrology_rain_noise: Perlin,
-    continent_sites: Vec<ContinentSite>,
-    mountain_ranges: MountainRangeMap,
-    plate_map: PlateMap,
-    plate_lithology: Vec<LithologyProfile>,
-    hydrology: HydrologySimulation,
+    continent_sites: Arc<Vec<ContinentSite>>,
+    mountain_ranges: Arc<MountainRangeMap>,
+    plate_map: Arc<PlateMap>,
+    plate_lithology: Arc<Vec<LithologyProfile>>,
+    hydrology: Arc<HydrologySimulation>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -195,25 +196,31 @@ impl WorldGenerator {
             temperature_noise,
             island_noise,
             hydrology_rain_noise,
-            continent_sites: Vec::new(),
-            mountain_ranges: MountainRangeMap::empty(),
-            plate_map: PlateMap::empty(),
-            plate_lithology: Vec::new(),
-            hydrology: HydrologySimulation::empty(),
+            continent_sites: Arc::new(Vec::new()),
+            mountain_ranges: Arc::new(MountainRangeMap::empty()),
+            plate_map: Arc::new(PlateMap::empty()),
+            plate_lithology: Arc::new(Vec::new()),
+            hydrology: Arc::new(HydrologySimulation::empty()),
         };
 
+        generator.hydrology = Arc::new(HydrologySimulation::generate(&generator));
+
         progress.on_phase(WorldGenPhase::Continents);
-        generator.continent_sites = generate_continent_sites(&generator.config);
-        generator.plate_map = PlateMap::generate(&generator.config, &generator.continent_sites);
+        generator.continent_sites = Arc::new(generate_continent_sites(&generator.config));
+        generator.plate_map = Arc::new(PlateMap::generate(
+            &generator.config,
+            &generator.continent_sites,
+        ));
 
         progress.on_phase(WorldGenPhase::Terrain);
         generator.initialize_terrain_phase();
 
         progress.on_phase(WorldGenPhase::Mountains);
-        generator.mountain_ranges =
-            MountainRangeMap::generate(&generator.config, &generator.continent_sites, &|u, v| {
-                generator.plate_sample(u, v)
-            });
+        generator.mountain_ranges = Arc::new(MountainRangeMap::generate(
+            &generator.config,
+            &generator.continent_sites,
+            &|u, v| generator.plate_sample(u, v),
+        ));
 
         progress.on_phase(WorldGenPhase::Climate);
         generator.initialize_climate_phase();
@@ -222,9 +229,9 @@ impl WorldGenerator {
         generator.initialize_island_phase();
 
         progress.on_phase(WorldGenPhase::Hydrology);
-        generator.hydrology = HydrologySimulation::generate(&generator);
+        generator.hydrology = Arc::new(HydrologySimulation::generate(&generator));
 
-        generator.plate_lithology = generate_plate_lithology(
+        generator.plate_lithology = Arc::new(generate_plate_lithology(
             &generator.config,
             &generator.plate_map,
             |world_x, world_z| {
@@ -232,7 +239,7 @@ impl WorldGenerator {
                 let water = generator.get_water_level(world_x, world_z);
                 (height, water)
             },
-        );
+        ));
 
         progress.on_phase(WorldGenPhase::Finalize);
         generator
@@ -264,11 +271,11 @@ impl WorldGenerator {
             temperature_noise,
             island_noise,
             hydrology_rain_noise,
-            continent_sites: metadata.continent_sites,
-            mountain_ranges: metadata.mountain_ranges,
-            plate_map: metadata.plate_map,
-            plate_lithology: metadata.plate_lithology,
-            hydrology: metadata.hydrology,
+            continent_sites: Arc::new(metadata.continent_sites),
+            mountain_ranges: Arc::new(metadata.mountain_ranges),
+            plate_map: Arc::new(metadata.plate_map),
+            plate_lithology: Arc::new(metadata.plate_lithology),
+            hydrology: Arc::new(metadata.hydrology),
         }
     }
 
@@ -379,11 +386,11 @@ impl WorldGenerator {
     pub fn metadata(&self) -> WorldMetadata {
         WorldMetadata {
             config: self.config.clone(),
-            continent_sites: self.continent_sites.clone(),
-            mountain_ranges: self.mountain_ranges.clone(),
-            plate_map: self.plate_map.clone(),
-            hydrology: self.hydrology.clone(),
-            plate_lithology: self.plate_lithology.clone(),
+            continent_sites: (*self.continent_sites).clone(),
+            mountain_ranges: (*self.mountain_ranges).clone(),
+            plate_map: (*self.plate_map).clone(),
+            hydrology: (*self.hydrology).clone(),
+            plate_lithology: (*self.plate_lithology).clone(),
         }
     }
 

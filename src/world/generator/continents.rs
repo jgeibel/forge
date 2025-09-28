@@ -197,7 +197,7 @@ impl WorldGenerator {
             self.periodic_noise(&self.continent_noise, u as f64, v as f64, coastal_cycles) as f32;
         let jitter = base_radius * 0.1_f32 * coastal_noise;
 
-        for site in &self.continent_sites {
+        for site in self.continent_sites.iter() {
             let mut du = torus_distance(u, site.position.x);
             let mut dv = torus_distance(v, site.position.y);
 
@@ -270,7 +270,7 @@ impl WorldGenerator {
         let base_radius = self.config.continent_radius.max(0.01_f32);
         let mut strongest = 0.0_f32;
 
-        for site in &self.continent_sites {
+        for site in self.continent_sites.iter() {
             let du = torus_distance(u, site.position.x);
             let dv = torus_distance(v, site.position.y);
 

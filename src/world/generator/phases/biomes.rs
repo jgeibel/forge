@@ -1,4 +1,7 @@
+use bevy::log::info;
 use bevy::math::Vec2;
+use std::env;
+use std::time::Instant;
 
 use super::super::{
     util::{lerp_color, lerp_f32},
@@ -7,6 +10,58 @@ use super::super::{
 use crate::block::BlockType;
 use crate::chunk::{ChunkPos, ChunkStorage, CHUNK_SIZE};
 use crate::world::biome::Biome;
+
+struct ChunkBakeProfiler {
+    enabled: bool,
+    sections: Vec<(&'static str, f32)>,
+}
+
+impl ChunkBakeProfiler {
+    fn new() -> Self {
+        let enabled = env::var("FORGE_PROFILE_CHUNK").is_ok();
+        Self {
+            enabled,
+            sections: if enabled { Vec::new() } else { Vec::new() },
+        }
+    }
+
+    fn measure<T, F>(&mut self, label: &'static str, f: F) -> T
+    where
+        F: FnOnce() -> T,
+    {
+        if !self.enabled {
+            return f();
+        }
+
+        let start = Instant::now();
+        let value = f();
+        let duration = start.elapsed().as_secs_f32() * 1000.0;
+        self.sections.push((label, duration));
+        value
+    }
+
+    fn finish(&self, chunk_pos: ChunkPos) {
+        if !self.enabled {
+            return;
+        }
+
+        let total_ms: f32 = self.sections.iter().map(|(_, ms)| *ms).sum();
+        let mut section_text = String::new();
+        for (label, duration) in &self.sections {
+            if !section_text.is_empty() {
+                section_text.push_str(", ");
+            }
+            section_text.push_str(label);
+            section_text.push('=');
+            section_text.push_str(&format!("{duration:.2}ms"));
+        }
+
+        info!(
+            "chunk-bake profile: pos=({}, {}, {}) total={:.2}ms sections=[{}]",
+            chunk_pos.x, chunk_pos.y, chunk_pos.z, total_ms, section_text
+        );
+    }
+}
 
 impl WorldGenerator {
     pub fn get_biome(&self, world_x: f32, world_z: f32) -> Biome {
@@ -48,6 +103,7 @@ impl WorldGenerator {
     }
 
     pub fn bake_chunk(&self, chunk_pos: ChunkPos) -> ChunkStorage {
+        let mut profiler = ChunkBakeProfiler::new();
         let world_origin = chunk_pos.to_world_pos();
         #[derive(Clone, Copy)]
         struct ColumnInfo {
@@ -58,117 +114,125 @@ impl WorldGenerator {
             water_block: BlockType,
         }
 
-        let mut columns = Vec::with_capacity(CHUNK_SIZE * CHUNK_SIZE);
-        for z in 0..CHUNK_SIZE {
-            for x in 0..CHUNK_SIZE {
-                let world_x = world_origin.x + x as f32;
-                let world_z = world_origin.z + z as f32;
+        let columns = profiler.measure("column_precompute", || {
+            let mut columns = Vec::with_capacity(CHUNK_SIZE * CHUNK_SIZE);
+            for z in 0..CHUNK_SIZE {
+                for x in 0..CHUNK_SIZE {
+                    let world_x = world_origin.x + x as f32;
+                    let world_z = world_origin.z + z as f32;
 
-                let components = self.terrain_components(world_x, world_z);
-                let hydro = self.sample_hydrology(world_x, world_z, components.base_height);
+                    let components = self.terrain_components(world_x, world_z);
+                    let hydro = self.sample_hydrology(world_x, world_z, components.base_height);
 
-                let floodplain = self.config.hydrology_floodplain_radius.max(0.0);
-                let mut height = components.base_height - hydro.channel_depth;
-                if hydro.pond_intensity > 0.05 {
-                    let soften = (floodplain * 0.1).clamp(0.0, 6.0);
-                    let shore_level = (hydro.water_level - soften).min(height);
-                    height = height.min(shore_level);
-                } else if hydro.river_intensity > 0.05 {
-                    let soften = (floodplain * 0.2).clamp(0.5, 12.0);
-                    let blend = soften * (1.0 - hydro.river_intensity).clamp(0.0, 1.0);
-                    height = height.min(hydro.water_level - blend);
+                    let floodplain = self.config.hydrology_floodplain_radius.max(0.0);
+                    let mut height = components.base_height - hydro.channel_depth;
+                    if hydro.pond_intensity > 0.05 {
+                        let soften = (floodplain * 0.1).clamp(0.0, 6.0);
+                        let shore_level = (hydro.water_level - soften).min(height);
+                        height = height.min(shore_level);
+                    } else if hydro.river_intensity > 0.05 {
+                        let soften = (floodplain * 0.2).clamp(0.5, 12.0);
+                        let blend = soften * (1.0 - hydro.river_intensity).clamp(0.0, 1.0);
+                        height = height.min(hydro.water_level - blend);
+                    }
+
+                    if hydro.coastal_factor > 0.01 {
+                        let blend_strength = hydro.coastal_factor.clamp(0.0, 1.0);
+                        let max_elevation =
+                            (self.config.hydrology_estuary_length * 0.05).clamp(4.0, 18.0);
+                        let relative = height - self.config.sea_level;
+                        let clamped = relative.clamp(-max_elevation, max_elevation);
+                        let target = self.config.sea_level + clamped;
+                        height = lerp_f32(height, target, (blend_strength * 0.5).clamp(0.0, 1.0));
+                        height = height.max(self.config.sea_level + 0.05);
+                    }
+
+                    height = height.max(4.0);
+
+                    let mut water_level = if hydro.water_level > self.config.sea_level {
+                        hydro.water_level
+                    } else {
+                        self.config.sea_level
+                    };
+
+                    if hydro.pond_intensity > 0.05 {
+                        let bed_height = height;
+                        let lake_depth = (water_level - bed_height).max(0.0);
+                        let max_depth =
+                            (self.config.hydrology_pond_max_radius * 0.18).clamp(2.0, 8.0);
+                        let min_depth = (self.config.hydrology_pond_min_radius * 0.05).max(0.6);
+                        let desired_depth = lake_depth.clamp(min_depth, max_depth);
+                        water_level = (bed_height + desired_depth).min(water_level);
+                    } else if hydro.river_intensity > 0.05 {
+                        let bed_height = height;
+                        let depth_scale = self.config.hydrology_river_depth_scale.max(1.0);
+                        let max_depth = (depth_scale * 0.35).clamp(1.2, depth_scale);
+                        let min_depth = (0.3 + hydro.river_intensity * 0.7).clamp(0.35, max_depth);
+                        let desired_depth = hydro.channel_depth.clamp(min_depth, max_depth);
+                        water_level = (bed_height + desired_depth).min(water_level);
+                    }
+
+                    water_level = water_level.max(self.config.sea_level).max(height);
+
+                    let temperature_c = self.temperature_at_height(world_x, world_z, height);
+                    let moisture = self.get_moisture(world_x, world_z);
+                    let biome = self.classify_biome_at_position(
+                        world_x,
+                        world_z,
+                        height,
+                        temperature_c,
+                        moisture,
+                    );
+
+                    let surface_block = biome.surface_block();
+                    let subsurface_block = biome.subsurface_block();
+                    let water_block = match biome {
+                        Biome::FrozenOcean | Biome::IceCap => BlockType::Ice,
+                        _ => BlockType::Water,
+                    };
+
+                    columns.push(ColumnInfo {
+                        height,
+                        water_level,
+                        surface_block,
+                        subsurface_block,
+                        water_block,
+                    });
+                }
+            }
+            columns
+        });
+
+        let storage = profiler.measure("fill_storage", || {
+            ChunkStorage::from_fn(move |x, y, z| {
+                let column = &columns[z * CHUNK_SIZE + x];
+                let world_y = world_origin.y + y as f32;
+
+                if world_y < 2.0 {
+                    return BlockType::Bedrock;
                 }
 
-                if hydro.coastal_factor > 0.01 {
-                    let blend_strength = hydro.coastal_factor.clamp(0.0, 1.0);
-                    let max_elevation =
-                        (self.config.hydrology_estuary_length * 0.05).clamp(4.0, 18.0);
-                    let relative = height - self.config.sea_level;
-                    let clamped = relative.clamp(-max_elevation, max_elevation);
-                    let target = self.config.sea_level + clamped;
-                    height = lerp_f32(height, target, (blend_strength * 0.5).clamp(0.0, 1.0));
-                    height = height.max(self.config.sea_level + 0.05);
+                if world_y > column.height {
+                    if world_y <= column.water_level {
+                        return column.water_block;
+                    }
+                    return BlockType::Air;
                 }
 
-                height = height.max(4.0);
-
-                let mut water_level = if hydro.water_level > self.config.sea_level {
-                    hydro.water_level
-                } else {
-                    self.config.sea_level
-                };
-
-                if hydro.pond_intensity > 0.05 {
-                    let bed_height = height;
-                    let lake_depth = (water_level - bed_height).max(0.0);
-                    let max_depth = (self.config.hydrology_pond_max_radius * 0.18).clamp(2.0, 8.0);
-                    let min_depth = (self.config.hydrology_pond_min_radius * 0.05).max(0.6);
-                    let desired_depth = lake_depth.clamp(min_depth, max_depth);
-                    water_level = (bed_height + desired_depth).min(water_level);
-                } else if hydro.river_intensity > 0.05 {
-                    let bed_height = height;
-                    let depth_scale = self.config.hydrology_river_depth_scale.max(1.0);
-                    let max_depth = (depth_scale * 0.35).clamp(1.2, depth_scale);
-                    let min_depth = (0.3 + hydro.river_intensity * 0.7).clamp(0.35, max_depth);
-                    let desired_depth = hydro.channel_depth.clamp(min_depth, max_depth);
-                    water_level = (bed_height + desired_depth).min(water_level);
+                if world_y >= column.height - 1.0 {
+                    return column.surface_block;
                 }
 
-                water_level = water_level.max(self.config.sea_level).max(height);
-
-                let temperature_c = self.temperature_at_height(world_x, world_z, height);
-                let moisture = self.get_moisture(world_x, world_z);
-                let biome = self.classify_biome_at_position(
-                    world_x,
-                    world_z,
-                    height,
-                    temperature_c,
-                    moisture,
-                );
-
-                let surface_block = biome.surface_block();
-                let subsurface_block = biome.subsurface_block();
-                let water_block = match biome {
-                    Biome::FrozenOcean | Biome::IceCap => BlockType::Ice,
-                    _ => BlockType::Water,
-                };
-
-                columns.push(ColumnInfo {
-                    height,
-                    water_level,
-                    surface_block,
-                    subsurface_block,
-                    water_block,
-                });
-            }
-        }
-
-        let columns = columns;
-        ChunkStorage::from_fn(move |x, y, z| {
-            let column = &columns[z * CHUNK_SIZE + x];
-            let world_y = world_origin.y + y as f32;
-
-            if world_y < 2.0 {
-                return BlockType::Bedrock;
-            }
-
-            if world_y > column.height {
-                if world_y <= column.water_level {
-                    return column.water_block;
+                if world_y >= column.height - 4.0 {
+                    return column.subsurface_block;
                 }
-                return BlockType::Air;
-            }
 
-            if world_y >= column.height - 1.0 {
-                return column.surface_block;
-            }
+                BlockType::Stone
+            })
+        });
 
-            if world_y >= column.height - 4.0 {
-                return column.subsurface_block;
-            }
-
-            BlockType::Stone
-        })
+        profiler.finish(chunk_pos);
+        storage
     }
 
     pub fn preview_color(&self, world_x: f32, world_z: f32, biome: Biome, height: f32) -> [u8; 4] {

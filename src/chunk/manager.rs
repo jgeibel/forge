@@ -13,8 +13,8 @@ use bevy::prelude::*;
 use bevy::tasks::{AsyncComputeTaskPool, Task};
 use bevy::utils::HashSet;
 use futures_lite::future;
-use std::collections::{HashMap, VecDeque};
-use std::sync::Arc;
+use std::cmp::Ordering;
+use std::collections::{BinaryHeap, HashMap, VecDeque};
 use std::time::Instant;
 
 const MAX_CONCURRENT_CHUNK_TASKS: usize = 6;
@@ -22,20 +22,68 @@ const MAX_IMMEDIATE_CHUNKS_PER_FRAME: i32 = 4;
 const MAX_QUEUED_CHUNKS_PER_FRAME: i32 = 48;
 const PREFETCH_MARGIN: i32 = 2;
 const VERTICAL_DISTANCE_WEIGHT: i32 = 4;
-const MAX_DYNAMIC_ENQUEUE_BUDGET_MS: f32 = 6.0;
+const BASE_DYNAMIC_ENQUEUE_BUDGET_MS: f32 = 8.0;
 const VIEW_CULL_THRESHOLD: f32 = -0.35;
 const VIEW_ALIGNMENT_SCALE: f32 = 240.0;
+
+fn burst_multiplier(backlog: usize) -> i32 {
+    if backlog >= 768 {
+        6
+    } else if backlog >= 384 {
+        5
+    } else if backlog >= 192 {
+        4
+    } else if backlog >= 96 {
+        3
+    } else if backlog >= 32 {
+        2
+    } else {
+        1
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct QueuedChunk {
+    priority: i32,
+    position: ChunkPos,
+}
+
+impl PartialEq for QueuedChunk {
+    fn eq(&self, other: &Self) -> bool {
+        self.priority == other.priority && self.position == other.position
+    }
+}
+
+impl Eq for QueuedChunk {}
+
+impl PartialOrd for QueuedChunk {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for QueuedChunk {
+    fn cmp(&self, other: &Self) -> Ordering {
+        other
+            .priority
+            .cmp(&self.priority)
+            .then_with(|| self.position.x.cmp(&other.position.x))
+            .then_with(|| self.position.y.cmp(&other.position.y))
+            .then_with(|| self.position.z.cmp(&other.position.z))
+    }
+}
 
 #[derive(Resource, Default)]
 pub struct ChunkManager {
     pub loaded_chunks: HashSet<ChunkPos>,
     pub initial_spawn_complete: bool,
+    candidate_state: CandidateState,
 }
 
 /// Resource for tracking chunk generation tasks
 #[derive(Resource, Default)]
 pub struct ChunkGenerationQueue {
-    pub pending_chunks: Vec<ChunkPos>,
+    pending_chunks: BinaryHeap<QueuedChunk>,
     pub tasks: Vec<(ChunkPos, Task<ChunkStorage>)>,
     pub initial_generation_complete: bool,
     scheduled: HashSet<ChunkPos>,
@@ -43,19 +91,194 @@ pub struct ChunkGenerationQueue {
     recent_durations_ms: VecDeque<f32>,
 }
 
+#[derive(Default)]
+struct CandidateState {
+    last_player_chunk: Option<ChunkPos>,
+    last_render_distance: i32,
+    last_forward: Vec3,
+    cached_candidates: Vec<(ChunkPos, i32)>,
+    cursor: usize,
+}
+
+impl CandidateState {
+    fn remaining_count(&self) -> usize {
+        self.cached_candidates.len().saturating_sub(self.cursor)
+    }
+
+    fn next(&mut self) -> Option<(ChunkPos, i32)> {
+        if self.cursor >= self.cached_candidates.len() {
+            return None;
+        }
+        let result = self.cached_candidates[self.cursor];
+        self.cursor += 1;
+        Some(result)
+    }
+
+    fn should_rebuild(&self, player_chunk: ChunkPos, view_distance: i32, forward: Vec3) -> bool {
+        if self
+            .last_player_chunk
+            .map_or(true, |last| last != player_chunk)
+        {
+            return true;
+        }
+
+        if self.last_render_distance != view_distance {
+            return true;
+        }
+
+        let stored_forward = self.last_forward;
+        let forward_len = forward.length_squared();
+        if forward_len > f32::EPSILON {
+            let stored_len = stored_forward.length_squared();
+            if stored_len > f32::EPSILON {
+                let dot = stored_forward.normalize().dot(forward.normalize());
+                if dot < 0.9 {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
+    fn ensure_candidates(
+        &mut self,
+        player_chunk: ChunkPos,
+        view_distance: i32,
+        forward: Vec3,
+        player_pos: Vec3,
+        world_gen: &WorldGenerator,
+    ) {
+        let normalized_forward = if forward.length_squared() > f32::EPSILON {
+            forward.normalize()
+        } else {
+            Vec3::Z
+        };
+
+        if self.should_rebuild(player_chunk, view_distance, normalized_forward) {
+            self.rebuild(
+                player_chunk,
+                view_distance,
+                normalized_forward,
+                player_pos,
+                world_gen,
+            );
+        }
+    }
+
+    fn rebuild(
+        &mut self,
+        player_chunk: ChunkPos,
+        view_distance: i32,
+        forward: Vec3,
+        player_pos: Vec3,
+        world_gen: &WorldGenerator,
+    ) {
+        let prefetch_distance = view_distance + PREFETCH_MARGIN;
+        let max_horizontal_distance_sq = prefetch_distance * prefetch_distance;
+
+        let mut candidates: Vec<(ChunkPos, i32)> = Vec::new();
+
+        for dx in -prefetch_distance..=prefetch_distance {
+            for dz in -prefetch_distance..=prefetch_distance {
+                let horizontal_distance_sq = dx * dx + dz * dz;
+                if horizontal_distance_sq > max_horizontal_distance_sq {
+                    continue;
+                }
+
+                let chunk_x = player_chunk.x + dx;
+                let chunk_z = player_chunk.z + dz;
+                let surface_y = world_gen.surface_chunk_y(chunk_x, chunk_z);
+
+                let mut y_targets = Vec::with_capacity(4);
+                y_targets.push(surface_y);
+
+                if !y_targets.contains(&player_chunk.y) {
+                    y_targets.push(player_chunk.y);
+                }
+
+                let upper = surface_y + 1;
+                if !y_targets.contains(&upper) {
+                    y_targets.push(upper);
+                }
+
+                let lower = surface_y - 1;
+                if !y_targets.contains(&lower) {
+                    y_targets.push(lower);
+                }
+
+                for &chunk_y in &y_targets {
+                    let chunk_pos = ChunkPos::new(chunk_x, chunk_y, chunk_z);
+
+                    let vertical_distance = (chunk_y - player_chunk.y).abs();
+                    let vertical_score = vertical_distance * VERTICAL_DISTANCE_WEIGHT;
+                    let mut score = horizontal_distance_sq + vertical_score;
+
+                    let chunk_center =
+                        chunk_pos.to_world_pos() + Vec3::splat(CHUNK_SIZE as f32 * 0.5);
+                    let to_chunk = chunk_center - player_pos;
+                    let distance_sq = to_chunk.length_squared();
+
+                    if distance_sq > f32::EPSILON {
+                        let alignment = forward.dot(to_chunk / distance_sq.sqrt());
+                        if alignment < VIEW_CULL_THRESHOLD && horizontal_distance_sq > 4 {
+                            continue;
+                        }
+                        let penalty =
+                            ((1.0 - alignment).max(0.0_f32) * VIEW_ALIGNMENT_SCALE).round() as i32;
+                        score += penalty.max(0);
+                    }
+
+                    candidates.push((chunk_pos, score));
+                }
+            }
+        }
+
+        candidates.sort_by_key(|(_, score)| *score);
+
+        self.cached_candidates = candidates;
+        self.cursor = 0;
+        self.last_player_chunk = Some(player_chunk);
+        self.last_render_distance = view_distance;
+        self.last_forward = forward;
+    }
+}
+
 impl ChunkGenerationQueue {
     pub fn contains(&self, position: &ChunkPos) -> bool {
         self.scheduled.contains(position)
     }
 
-    pub fn enqueue_unique(&mut self, position: ChunkPos) -> bool {
+    pub fn enqueue_with_priority(&mut self, position: ChunkPos, priority: i32) -> bool {
         if self.contains(&position) {
             return false;
         }
 
-        self.pending_chunks.push(position);
+        self.pending_chunks.push(QueuedChunk { priority, position });
         self.scheduled.insert(position);
         true
+    }
+
+    fn requeue(&mut self, position: ChunkPos, priority: i32) {
+        self.pending_chunks.push(QueuedChunk { priority, position });
+    }
+
+    fn pop_pending(&mut self) -> Option<(ChunkPos, i32)> {
+        self.pending_chunks
+            .pop()
+            .map(|QueuedChunk { priority, position }| (position, priority))
+    }
+
+    fn drain_pending(&mut self) -> Vec<(ChunkPos, i32)> {
+        let mut drained = Vec::with_capacity(self.pending_chunks.len());
+        while let Some(QueuedChunk { priority, position }) = self.pending_chunks.pop() {
+            drained.push((position, priority));
+        }
+        drained
+    }
+
+    pub fn pending_len(&self) -> usize {
+        self.pending_chunks.len()
     }
 
     fn mark_completed(&mut self, position: &ChunkPos) {
@@ -104,14 +327,14 @@ pub fn load_persisted_pending_chunks(
         None => return,
     };
 
-    if chunk_queue.pending_chunks.is_empty() {
+    if chunk_queue.pending_len() == 0 {
         return;
     }
 
-    let pending = std::mem::take(&mut chunk_queue.pending_chunks);
+    let pending = chunk_queue.drain_pending();
     let mut remaining = Vec::with_capacity(pending.len());
 
-    for chunk_pos in pending {
+    for (chunk_pos, priority) in pending {
         let mut spawn_storage: Option<ChunkStorage> = None;
         let mut revision = 1;
 
@@ -162,11 +385,13 @@ pub fn load_persisted_pending_chunks(
                 chunk_pos, revision
             );
         } else {
-            remaining.push(chunk_pos);
+            remaining.push((chunk_pos, priority));
         }
     }
 
-    chunk_queue.pending_chunks = remaining;
+    for (chunk_pos, priority) in remaining {
+        chunk_queue.requeue(chunk_pos, priority);
+    }
 }
 
 /// System to generate initial spawn area chunks
@@ -175,7 +400,7 @@ pub fn generate_initial_chunks(
     mut loading_progress: ResMut<LoadingProgress>,
 ) {
     // Only queue chunks once at the beginning
-    if chunk_queue.pending_chunks.is_empty()
+    if chunk_queue.pending_len() == 0
         && chunk_queue.tasks.is_empty()
         && !chunk_queue.initial_generation_complete
         && loading_progress.total_chunks == 0
@@ -201,15 +426,18 @@ pub fn generate_initial_chunks(
         for x in -2..=2 {
             for y in -1..=1 {
                 for z in -2..=2 {
-                    let _ = chunk_queue.enqueue_unique(ChunkPos::new(
-                        spawn_chunk_x + x,
-                        2 + y, // Start at chunk Y=2 (blocks 64-95)
-                        spawn_chunk_z + z,
-                    ));
+                    let _ = chunk_queue.enqueue_with_priority(
+                        ChunkPos::new(
+                            spawn_chunk_x + x,
+                            2 + y, // Start at chunk Y=2 (blocks 64-95)
+                            spawn_chunk_z + z,
+                        ),
+                        0,
+                    );
                 }
             }
         }
-        loading_progress.total_chunks = chunk_queue.pending_chunks.len() as u32;
+        loading_progress.total_chunks = chunk_queue.pending_len() as u32;
         info!(
             "Queued {} chunks for initial generation",
             loading_progress.total_chunks
@@ -226,20 +454,37 @@ pub fn spawn_chunk_tasks(
     let task_pool = AsyncComputeTaskPool::get();
 
     let initial_tasks = chunk_queue.tasks.len();
-    let _initial_pending = chunk_queue.pending_chunks.len();
+    let backlog = chunk_queue.pending_len() + chunk_queue.tasks.len();
+    let cpu_cores = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
+    let cpu_budget = cpu_cores.saturating_sub(1).max(MAX_CONCURRENT_CHUNK_TASKS);
+    let concurrency_limit = if backlog >= 240 {
+        cpu_budget + 2
+    } else if backlog >= 160 {
+        cpu_budget + 1
+    } else if backlog >= 96 {
+        cpu_budget
+    } else if backlog >= 48 {
+        cpu_budget.max(MAX_CONCURRENT_CHUNK_TASKS + 2)
+    } else if backlog >= 24 {
+        cpu_budget.max(MAX_CONCURRENT_CHUNK_TASKS + 1)
+    } else {
+        MAX_CONCURRENT_CHUNK_TASKS
+    };
 
-    while chunk_queue.tasks.len() < MAX_CONCURRENT_CHUNK_TASKS
-        && !chunk_queue.pending_chunks.is_empty()
-    {
-        if let Some(chunk_pos) = chunk_queue.pending_chunks.pop() {
-            let world_gen = Arc::new(world_gen.clone());
-            let task = task_pool.spawn(async move {
-                // Bake chunk data in background thread
-                world_gen.bake_chunk(chunk_pos)
-            });
-            chunk_queue.tasks.push((chunk_pos, task));
-            chunk_queue.record_start(chunk_pos, time.elapsed_seconds());
-        }
+    while chunk_queue.tasks.len() < concurrency_limit {
+        let Some((chunk_pos, _priority)) = chunk_queue.pop_pending() else {
+            break;
+        };
+
+        let world_gen = world_gen.clone();
+        let task = task_pool.spawn(async move {
+            // Bake chunk data in background thread
+            world_gen.bake_chunk(chunk_pos)
+        });
+        chunk_queue.tasks.push((chunk_pos, task));
+        chunk_queue.record_start(chunk_pos, time.elapsed_seconds());
     }
 
     let spawned = chunk_queue.tasks.len() - initial_tasks;
@@ -248,7 +493,7 @@ pub fn spawn_chunk_tasks(
             "chunk-gen spawn: spawned={} active={} pending={} queued_scheduled={}",
             spawned,
             chunk_queue.tasks.len(),
-            chunk_queue.pending_chunks.len(),
+            chunk_queue.pending_len(),
             chunk_queue.scheduled.len()
         );
     }
@@ -335,7 +580,7 @@ pub fn poll_chunk_tasks(
     }
 
     // Check if initial generation is complete
-    if chunk_queue.pending_chunks.is_empty()
+    if chunk_queue.pending_len() == 0
         && chunk_queue.tasks.is_empty()
         && !chunk_queue.initial_generation_complete
     {
@@ -380,80 +625,39 @@ pub fn spawn_chunks_around_player(
 
     let player_chunk = ChunkPos::from_world_pos(player_transform.translation);
     let view_distance = altitude_system.render_distance as i32;
-    let prefetch_distance = view_distance + PREFETCH_MARGIN;
-    let max_horizontal_distance_sq = prefetch_distance * prefetch_distance;
-
-    let mut candidates: Vec<(ChunkPos, i32)> = Vec::new();
-
     let forward: Vec3 = player_transform.forward().into();
+    let player_pos = player_transform.translation;
 
-    for dx in -prefetch_distance..=prefetch_distance {
-        for dz in -prefetch_distance..=prefetch_distance {
-            let horizontal_distance_sq = dx * dx + dz * dz;
-            if horizontal_distance_sq > max_horizontal_distance_sq {
-                continue;
-            }
+    chunk_manager.candidate_state.ensure_candidates(
+        player_chunk,
+        view_distance,
+        forward,
+        player_pos,
+        &world_gen,
+    );
 
-            let chunk_x = player_chunk.x + dx;
-            let chunk_z = player_chunk.z + dz;
-            let surface_y = world_gen.surface_chunk_y(chunk_x, chunk_z);
-
-            let mut y_targets = Vec::with_capacity(4);
-            y_targets.push(surface_y);
-
-            if !y_targets.contains(&player_chunk.y) {
-                y_targets.push(player_chunk.y);
-            }
-
-            let upper = surface_y + 1;
-            if !y_targets.contains(&upper) {
-                y_targets.push(upper);
-            }
-
-            let lower = surface_y - 1;
-            if !y_targets.contains(&lower) {
-                y_targets.push(lower);
-            }
-
-            for &chunk_y in &y_targets {
-                let chunk_pos = ChunkPos::new(chunk_x, chunk_y, chunk_z);
-
-                if chunk_manager.loaded_chunks.contains(&chunk_pos) {
-                    continue;
-                }
-
-                let vertical_distance = (chunk_y - player_chunk.y).abs();
-                let vertical_score = vertical_distance * VERTICAL_DISTANCE_WEIGHT;
-                let mut score = horizontal_distance_sq + vertical_score;
-
-                let chunk_center = chunk_pos.to_world_pos() + Vec3::splat(CHUNK_SIZE as f32 * 0.5);
-                let to_chunk = chunk_center - player_transform.translation;
-                let distance_sq = to_chunk.length_squared();
-
-                if distance_sq > f32::EPSILON {
-                    let alignment = forward.dot(to_chunk / distance_sq.sqrt());
-                    if alignment < VIEW_CULL_THRESHOLD && horizontal_distance_sq > 4 {
-                        continue;
-                    }
-                    let penalty =
-                        ((1.0 - alignment).max(0.0_f32) * VIEW_ALIGNMENT_SCALE).round() as i32;
-                    score += penalty.max(0);
-                }
-
-                candidates.push((chunk_pos, score));
-            }
-        }
-    }
-
-    candidates.sort_by_key(|(_, score)| *score);
+    let backlog = chunk_queue.pending_len() + chunk_queue.tasks.len();
+    let remaining_candidates = chunk_manager.candidate_state.remaining_count();
+    let backlog_estimate = backlog + remaining_candidates;
+    let burst_multiplier = burst_multiplier(backlog_estimate);
+    let budget_ms = BASE_DYNAMIC_ENQUEUE_BUDGET_MS * burst_multiplier as f32;
+    let max_immediate = MAX_IMMEDIATE_CHUNKS_PER_FRAME * burst_multiplier;
+    let max_queued = MAX_QUEUED_CHUNKS_PER_FRAME * burst_multiplier;
 
     let mut immediate_spawned = 0;
     let mut queued = 0;
-
     let mut budget_exhausted = false;
+    let mut processed = 0;
+    let max_iterations = (burst_multiplier.max(1) * 64) as usize;
 
-    for (chunk_pos, _) in candidates {
-        if frame_start.elapsed().as_secs_f32() * 1000.0 >= MAX_DYNAMIC_ENQUEUE_BUDGET_MS {
+    while let Some((chunk_pos, score)) = chunk_manager.candidate_state.next() {
+        if processed >= max_iterations {
+            break;
+        }
+
+        processed += 1;
+
+        if frame_start.elapsed().as_secs_f32() * 1000.0 >= budget_ms {
             budget_exhausted = true;
             break;
         }
@@ -463,10 +667,6 @@ pub fn spawn_chunks_around_player(
         }
 
         if chunk_queue.contains(&chunk_pos) {
-            continue;
-        }
-
-        if chunk_queue.pending_chunks.contains(&chunk_pos) {
             continue;
         }
 
@@ -483,9 +683,7 @@ pub fn spawn_chunks_around_player(
             chunk_queue.mark_completed(&chunk_pos);
             immediate_spawned += 1;
 
-            if immediate_spawned >= MAX_IMMEDIATE_CHUNKS_PER_FRAME
-                && queued >= MAX_QUEUED_CHUNKS_PER_FRAME
-            {
+            if immediate_spawned >= max_immediate && queued >= max_queued {
                 break;
             }
             continue;
@@ -534,19 +732,15 @@ pub fn spawn_chunks_around_player(
         }
 
         if spawned_from_persistence {
-            if immediate_spawned >= MAX_IMMEDIATE_CHUNKS_PER_FRAME
-                && queued >= MAX_QUEUED_CHUNKS_PER_FRAME
-            {
+            if immediate_spawned >= max_immediate && queued >= max_queued {
                 break;
             }
             continue;
         }
 
-        if chunk_queue.enqueue_unique(chunk_pos) {
+        if chunk_queue.enqueue_with_priority(chunk_pos, score) {
             queued += 1;
-            if immediate_spawned >= MAX_IMMEDIATE_CHUNKS_PER_FRAME
-                && queued >= MAX_QUEUED_CHUNKS_PER_FRAME
-            {
+            if immediate_spawned >= max_immediate && queued >= max_queued {
                 break;
             }
         }
@@ -554,11 +748,13 @@ pub fn spawn_chunks_around_player(
 
     if budget_exhausted {
         info!(
-            "chunk-load throttled: budget_ms={} immediate={} queued={} pending={}",
-            MAX_DYNAMIC_ENQUEUE_BUDGET_MS,
+            "chunk-load throttled: budget_ms={:.0} immediate={} queued={} pending={} backlog={} burst={}",
+            budget_ms,
             immediate_spawned,
             queued,
-            chunk_queue.pending_chunks.len()
+            chunk_queue.pending_len(),
+            backlog_estimate,
+            burst_multiplier
         );
         return;
     }
@@ -566,12 +762,13 @@ pub fn spawn_chunks_around_player(
     if immediate_spawned > 0 || queued > 0 {
         let elapsed_ms = frame_start.elapsed().as_secs_f32() * 1000.0;
         info!(
-            "chunk-load enqueue: immediate={} queued={} pending={} tasks={} elapsed_ms={:.2}",
+            "chunk-load enqueue: immediate={} queued={} pending={} tasks={} elapsed_ms={:.2} burst={}",
             immediate_spawned,
             queued,
-            chunk_queue.pending_chunks.len(),
+            chunk_queue.pending_len(),
             chunk_queue.tasks.len(),
-            elapsed_ms
+            elapsed_ms,
+            burst_multiplier
         );
     }
 }
@@ -672,7 +869,7 @@ pub fn log_chunk_streaming_metrics(
 
     *accumulator = 0.0;
 
-    let pending = chunk_queue.pending_chunks.len();
+    let pending = chunk_queue.pending_len();
     let active_tasks = chunk_queue.tasks.len();
     let scheduled = chunk_queue.scheduled.len();
     let mesh_tasks = mesh_jobs.task_count();

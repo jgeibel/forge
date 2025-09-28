@@ -3,7 +3,7 @@ use crate::texture::{BlockFace, BlockState, BlockTextureAtlas};
 use bevy::prelude::*;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
 use bevy::render::render_asset::RenderAssetUsages;
-use bevy::tasks::{AsyncComputeTaskPool, Task};
+use bevy::tasks::{IoTaskPool, Task};
 use bevy::utils::HashSet;
 use futures_lite::future;
 use std::collections::VecDeque;
@@ -64,7 +64,7 @@ pub fn queue_chunk_mesh_builds(
     let atlas_snapshot = texture_atlas
         .as_ref()
         .map(|atlas| Arc::new((**atlas).clone()));
-    let task_pool = AsyncComputeTaskPool::get();
+    let task_pool = IoTaskPool::get();
 
     for (entity, mut chunk) in chunk_query.iter_mut() {
         if !chunk.dirty || mesh_jobs.scheduled.contains(&entity) {
